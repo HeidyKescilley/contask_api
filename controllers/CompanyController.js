@@ -1,10 +1,11 @@
 // /controllers/CompanyController.js
+const { Op } = require("sequelize");
 const cleanCNPJ = require("./../helpers/clean-cnpj");
 const Company = require("../models/Company");
 const StatusHistory = require("../models/StatusHistory");
 const User = require("../models/User");
 const transporter = require("../services/emailService");
-const template = require("../emailsTemplates/suspensioTemplate");
+const { suspesionTemplate } = require("../emails/templates");
 
 module.exports = class CompanyController {
   static async addCompany(req, res) {
@@ -193,7 +194,7 @@ module.exports = class CompanyController {
     try {
       const companyName = company.name;
 
-      const htmlContent = template({ companyName, newStatus });
+      const htmlContent = suspensionTemplate({ companyName, newStatus });
 
       const subject = `${companyName} NOVO STATUS`;
 
@@ -224,6 +225,28 @@ module.exports = class CompanyController {
       });
     } catch (error) {
       console.error("Error sending emails:", error);
+    }
+  }
+
+  static async getStatusHistory(req, res) {
+    const { id } = req.params; // Company ID
+
+    try {
+      const history = await StatusHistory.findAll({
+        where: { companyId: id },
+        order: [["date", "DESC"]], // Change to 'ASC' if you want oldest first
+      });
+
+      if (!history || history.length === 0) {
+        return res
+          .status(404)
+          .json({ message: "No history found for this company." });
+      }
+
+      return res.status(200).json(history);
+    } catch (error) {
+      console.error("Error fetching status history:", error);
+      return res.status(500).json({ message: error.message });
     }
   }
 };
