@@ -3,7 +3,7 @@ const router = require("express").Router();
 
 const UserController = require("../controllers/UserController");
 
-// middlewate
+// middleware
 const verifyToken = require("../helpers/verify-token");
 
 router.post("/register", UserController.register);
@@ -15,7 +15,7 @@ router.get(
   verifyToken,
   UserController.getUsersByDepartment
 );
-router.get("/:id", UserController.getUserById);
-router.patch("/edit/:id", verifyToken, UserController.editUser);
+router.get("/user/:id", verifyToken, UserController.getUserById);
+router.patch("/user/edit/:id", verifyToken, UserController.editUser);
 
 module.exports = router;

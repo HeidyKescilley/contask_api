@@ -9,119 +9,154 @@ const { suspesionTemplate } = require("../emails/templates");
 
 module.exports = class CompanyController {
   static async addCompany(req, res) {
-    const {
-      num,
-      name,
-      cnpj,
-      ie,
-      rule,
-      classi,
-      contractInit,
-      contact,
-      email,
-      phone,
-      openedByUs,
-      uf,
-      obs,
-    } = req.body;
-
-    const cleanedCnpj = cleanCNPJ(cnpj);
-    const cleanedIe = cleanCNPJ(ie);
-
     try {
-      const cnpjExists = await Company.findOne({
-        where: { cnpj: cleanedCnpj },
-      });
-      const numExists = num ? await Company.findOne({ where: { num } }) : false;
-
-      if (cnpjExists || numExists) {
-        return res.status(422).json({
-          message: "CNPJ ou número já utilizado! Verique as informações.",
-        });
-      }
-
-      const company = {
+      const {
         num,
         name,
-        cnpj: cleanedCnpj,
-        ie: cleanedIe,
+        cnpj,
+        ie,
         rule,
         classi,
         contractInit,
         contact,
         email,
         phone,
-        status: "ATIVA",
-        respFiscalId: 1,
-        respDpId: 1,
-        respContabilId: 1,
-        zen: false,
-        openedByUs,
         uf,
+        openedByUs,
+        important_info,
         obs,
-      };
+      } = req.body;
 
-      const newCompany = await Company.create(company);
-      return res
-        .status(201)
-        .json({ message: "Empresa criada com sucesso!", newCompany });
+      // Validações básicas
+      if (!num || !name || !cnpj || !rule || !classi || !contact || !email) {
+        return res
+          .status(400)
+          .json({ message: "Campos obrigatórios faltando." });
+      }
+
+      // Verificar se a empresa já existe pelo CNPJ
+      const existingCompany = await Company.findOne({ where: { cnpj } });
+      if (existingCompany) {
+        return res
+          .status(400)
+          .json({ message: "Já existe uma empresa com este CNPJ." });
+      }
+
+      // Criar a nova empresa
+      const newCompany = await Company.create({
+        num,
+        name,
+        cnpj,
+        ie,
+        rule,
+        classi,
+        contractInit,
+        contact,
+        email,
+        phone,
+        uf,
+        openedByUs,
+        status: "ATIVA", // Status padrão ao criar uma nova empresa
+        statusUpdatedAt: new Date(),
+        obs,
+      });
+
+      // Adicionar histórico de status
+      await StatusHistory.create({
+        date: new Date(),
+        status: "ATIVA",
+        companyId: newCompany.id,
+      });
+
+      // Opcional: Enviar email para os responsáveis com as informações importantes
+      if (important_info) {
+        // Lógica para enviar email com important_info
+      }
+
+      // Retornar os dados da nova empresa
+      return res.status(201).json({
+        message: "Empresa criada com sucesso.",
+        company: newCompany,
+      });
     } catch (error) {
-      return res.status(500).json({ message: error });
+      console.error("Erro ao criar empresa:", error);
+      return res.status(500).json({ message: "Erro ao criar empresa." });
     }
   }
 
+  // Função para editar uma empresa (possivelmente ausente)
   static async editCompany(req, res) {
-    const {
-      name,
-      ie,
-      rule,
-      classi,
-      contact,
-      email,
-      phone,
-      respFiscalId,
-      respDpId,
-      respContabilId,
-      openedByUs,
-      zen,
-      uf,
-      obs,
-    } = req.body;
-
-    const id = req.params.id;
-
-    const cleanedIe = cleanCNPJ(ie);
-
-    const company = {
-      name,
-      ie: cleanedIe,
-      rule,
-      classi,
-      contact,
-      email,
-      phone,
-      respFiscalId,
-      respDpId,
-      respContabilId,
-      openedByUs,
-      zen,
-      uf,
-      obs,
-    };
-
     try {
-      const updatedCompany = await Company.update(company, { where: { id } });
-      return res
-        .status(201)
-        .json({ message: "Empresa editada com sucesso!", updatedCompany });
+      const { id } = req.params;
+      const {
+        num,
+        name,
+        cnpj,
+        ie,
+        rule,
+        classi,
+        contractInit,
+        contact,
+        email,
+        phone,
+        uf,
+        openedByUs,
+        obs,
+        respFiscalId,
+        respContabilId,
+        respDpId,
+      } = req.body;
+
+      // Validações básicas
+      if (!id || !name || !rule || !classi || !contact || !email) {
+        return res
+          .status(400)
+          .json({ message: "Campos obrigatórios faltando." });
+      }
+
+      // Encontrar a empresa
+      const company = await Company.findByPk(id);
+      if (!company) {
+        return res.status(404).json({ message: "Empresa não encontrada." });
+      }
+
+      // Atualizar os dados da empresa
+      company.name = name;
+      company.ie = ie;
+      company.rule = rule;
+      company.classi = classi;
+      company.contractInit = contractInit;
+      company.contact = contact;
+      company.email = email;
+      company.phone = phone;
+      company.uf = uf;
+      company.openedByUs = openedByUs;
+      company.obs = obs;
+      company.respFiscalId = respFiscalId;
+      company.respContabilId = respContabilId;
+      company.respDpId = respDpId;
+
+      await company.save();
+
+      return res.status(200).json({
+        message: "Empresa atualizada com sucesso.",
+        company: company,
+      });
     } catch (error) {
-      return res.status(500).json({ message: error });
+      console.error("Erro ao atualizar empresa:", error);
+      return res.status(500).json({ message: "Erro ao atualizar empresa." });
     }
   }
 
   static async getAll(req, res) {
     try {
-      const allCompanies = await Company.findAll();
+      const allCompanies = await Company.findAll({
+        include: [
+          { model: User, as: "respFiscal", attributes: ["id", "name"] },
+          { model: User, as: "respContabil", attributes: ["id", "name"] },
+          { model: User, as: "respDp", attributes: ["id", "name"] },
+        ],
+      });
       if (allCompanies.length > 0) {
         return res.status(200).json(allCompanies);
       } else {
@@ -160,25 +195,26 @@ module.exports = class CompanyController {
     const { newStatus, statusDate } = req.body;
 
     try {
-      // Find the company
+      // Encontrar a empresa
       const company = await Company.findByPk(companyId);
 
       if (!company) {
         return res.status(404).json({ message: "Empresa não encontrada." });
       }
 
-      // Update the company's status
+      // Atualizar o status e a data da última alteração
       company.status = newStatus;
+      company.statusUpdatedAt = statusDate;
       await company.save();
 
-      // Add a new record to StatusHistory
+      // Adicionar um novo registro ao StatusHistory
       await StatusHistory.create({
         date: statusDate,
         status: newStatus,
         companyId: companyId,
       });
 
-      // Send emails after the status has been successfully updated
+      // Enviar emails após a atualização do status
       await CompanyController.sendStatusChangeEmails(company, newStatus);
 
       return res
@@ -246,6 +282,96 @@ module.exports = class CompanyController {
       return res.status(200).json(history);
     } catch (error) {
       console.error("Error fetching status history:", error);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async getRecentStatusChanges(req, res) {
+    try {
+      const recentCompanies = await Company.findAll({
+        where: {
+          status: {
+            [Op.in]: ["SUSPENSA", "BAIXADA", "DISTRATO"],
+          },
+        },
+        order: [["statusUpdatedAt", "DESC"]],
+        limit: 10,
+        attributes: ["id", "name", "status", "statusUpdatedAt"],
+      });
+
+      return res.status(200).json(recentCompanies);
+    } catch (error) {
+      console.error("Error fetching recent status changes:", error);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async getRecentActiveCompanies(req, res) {
+    try {
+      const recentCompanies = await Company.findAll({
+        where: {
+          status: "ATIVA",
+        },
+        order: [["statusUpdatedAt", "DESC"]],
+        limit: 10,
+        attributes: ["id", "name", "status", "statusUpdatedAt"],
+      });
+
+      return res.status(200).json(recentCompanies);
+    } catch (error) {
+      console.error("Error fetching recent active companies:", error);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async getRecentCompanies(req, res) {
+    try {
+      const recentCompanies = await Company.findAll({
+        include: [
+          { model: User, as: "respFiscal", attributes: ["id", "name"] },
+          { model: User, as: "respDp", attributes: ["id", "name"] },
+          { model: User, as: "respContabil", attributes: ["id", "name"] }, // Adicionado
+        ],
+        order: [["createdAt", "DESC"]],
+        limit: 10,
+        attributes: ["id", "name", "contractInit"], // Adicionado 'contractInit'
+      });
+
+      return res.status(200).json(recentCompanies);
+    } catch (error) {
+      console.error("Error fetching recent companies:", error);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async getMyCompanies(req, res) {
+    try {
+      const userId = req.user.id;
+
+      console.log("Logged-in user ID:", userId);
+
+      const companies = await Company.findAll({
+        where: {
+          [Op.or]: [
+            { respFiscalId: userId },
+            { respDpId: userId },
+            { respContabilId: userId },
+          ],
+        },
+        include: [
+          { model: User, as: "respFiscal", attributes: ["id", "name"] },
+          { model: User, as: "respDp", attributes: ["id", "name"] },
+          { model: User, as: "respContabil", attributes: ["id", "name"] },
+        ],
+      });
+
+      if (!companies || companies.length === 0) {
+        return res.status(200).json([]);
+      }
+
+      return res.status(200).json(companies);
+    } catch (error) {
+      console.error("Error fetching user's companies:", error);
       return res.status(500).json({ message: error.message });
     }
   }

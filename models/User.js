@@ -31,6 +31,10 @@ const User = db.define("User", {
     require: true,
     allowNull: false,
   },
+  ramal: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 });
 
 module.exports = User;

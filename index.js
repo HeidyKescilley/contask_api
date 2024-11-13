@@ -9,6 +9,14 @@ require("dotenv").config();
 // Importando sequelize
 const sequelize = require("./db/conn");
 
+// Importando modelos para garantir que eles sejam registrados no Sequelize
+const User = require("./models/User");
+const Company = require("./models/Company");
+// ... importe outros modelos se necessário
+
+// Importando associações
+require("./models/associations");
+
 // Config JSON response
 app.use(express.json());
 
@@ -34,15 +42,17 @@ app.use(express.static("public"));
 // Routes
 const UserRoutes = require("./routes/UserRoutes");
 const CompanyRoutes = require("./routes/CompanyRoutes");
+const AlertRoutes = require("./routes/AlertRoutes");
 
 app.use("/", UserRoutes);
 app.use("/company", CompanyRoutes);
+app.use("/alerts", AlertRoutes);
 
 sequelize
-  .sync({ force: false })
+  .sync({ force: false, alter: false })
   .then(() => {
     app.listen(5000, () => {
-      console.log(`Server is running on http://localhost:5000`);
+      console.log("Server is running on http://localhost:5000");
     });
   })
   .catch((err) => console.log(err));

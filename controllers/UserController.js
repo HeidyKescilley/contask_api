@@ -18,6 +18,7 @@ module.exports = class UserController {
       administrator,
       password,
       confirmpassword,
+      ramal,
     } = req.body;
 
     // validations
@@ -28,10 +29,10 @@ module.exports = class UserController {
       return res.status(422).json({ message: "O email é obrigatorio!" });
     }
     if (!birthday) {
-      return res.status(422).json({ message: "O aniverdario é obrigatorio!" });
+      return res.status(422).json({ message: "O aniversário é obrigatório!" });
     }
     if (!department) {
-      return res.status(422).json({ message: "O departamento é obrigatoria!" });
+      return res.status(422).json({ message: "O departamento é obrigatório!" });
     }
     if (!password) {
       return res.status(422).json({ message: "A senha é obrigatorio!" });
@@ -39,7 +40,7 @@ module.exports = class UserController {
     if (!confirmpassword) {
       return res
         .status(422)
-        .json({ message: "A confirmação de senha é obrigatorio" });
+        .json({ message: "A confirmação de senha é obrigatória" });
     }
 
     if (password !== confirmpassword) {
@@ -67,6 +68,7 @@ module.exports = class UserController {
       department,
       administrator: administrator ? 1 : 0,
       password: passwordHash,
+      ramal,
     };
 
     try {
@@ -174,44 +176,14 @@ module.exports = class UserController {
   }
 
   static async editUser(req, res) {
-    const id = req.params.id;
-
     // check if user exists
     const token = await getToken(req);
     const user = await getUserByToken(token);
 
-    const { name, email, phone, password, confirmpassword } = req.body;
-
-    if (req.file) {
-      user.image = req.file.filename;
-    }
-
-    // validations
-    if (!name) {
-      return res.status(422).json({ message: "O nome é obrigatorio" });
-    }
-
-    if (!email) {
-      return res.status(422).json({ message: "O email é obrigatorio" });
-    }
-
-    // check if email has already taken
-    if (user.email !== email) {
-      const userExists = await User.findOne({ where: { email } });
-      if (userExists) {
-        return res.status(422).json({ message: "Email já está em uso!" });
-      }
-    }
-
-    if (!phone) {
-      return res.status(422).json({ message: "O telefone é obrigatorio" });
-    }
+    const { password, confirmpassword, ramal } = req.body;
 
     const updateData = {
-      name,
-      email,
-      phone,
-      image: user.image,
+      ramal,
     };
 
     if (password != confirmpassword) {

@@ -5,15 +5,22 @@ const templateSource = `
   <p>O novo status da empresa <strong>{{companyName}}</strong> é <strong>{{newStatus}}</strong>.</p>
 `;
 
-const templateSuspensio = `
+const emailSuspensio = `
   <p><strong>{{companyName}}</strong> suspenso.</p>
+`;
+
+const emailNewCompany = `
+  <p><strong>{{companyName}}</strong> nova empresa.</p>
 `;
 
 const template = Handlebars.compile(templateSource);
 
-const suspesionTemplate = Handlebars.compile(templateSuspensio);
+const suspesionTemplate = Handlebars.compile(emailSuspensio);
+
+const templateNewCompany = Handlebars.compile(emailNewCompany);
 
 module.exports = {
   template,
   suspesionTemplate,
+  templateNewCompany,
 };
