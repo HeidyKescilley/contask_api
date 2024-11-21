@@ -55,8 +55,10 @@ app.use("/admin", AdminRoutes);
 sequelize
   .sync({ force: false, alter: false })
   .then(() => {
-    app.listen(5000, () => {
-      console.log("Server is running on http://localhost:5000");
+    app.listen(process.env.PORT, () => {
+      console.log(
+        `Server is running on http://${process.env.HOST}:${process.env.PORT}`
+      );
     });
   })
   .catch((err) => console.log(err));
