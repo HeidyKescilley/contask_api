@@ -15,7 +15,6 @@ module.exports = class UserController {
       email,
       birthday,
       department,
-      administrator,
       password,
       confirmpassword,
       ramal,
@@ -23,10 +22,10 @@ module.exports = class UserController {
 
     // validations
     if (!name) {
-      return res.status(422).json({ message: "O nome é obrigatorio!" });
+      return res.status(422).json({ message: "O nome é obrigatório!" });
     }
     if (!email) {
-      return res.status(422).json({ message: "O email é obrigatorio!" });
+      return res.status(422).json({ message: "O email é obrigatório!" });
     }
     if (!birthday) {
       return res.status(422).json({ message: "O aniversário é obrigatório!" });
@@ -35,7 +34,7 @@ module.exports = class UserController {
       return res.status(422).json({ message: "O departamento é obrigatório!" });
     }
     if (!password) {
-      return res.status(422).json({ message: "A senha é obrigatorio!" });
+      return res.status(422).json({ message: "A senha é obrigatória!" });
     }
     if (!confirmpassword) {
       return res
@@ -66,14 +65,14 @@ module.exports = class UserController {
       email,
       birthday,
       department,
-      administrator: administrator ? 1 : 0,
+      role: "not-validated",
       password: passwordHash,
       ramal,
     };
 
     try {
       await User.create(user);
-      return res.status(201).json({ message: "Usuario criado com sucesso!" });
+      return res.status(201).json({ message: "Usuário criado com sucesso!" });
     } catch (error) {
       return res.status(500).json({ message: error });
     }
@@ -83,10 +82,10 @@ module.exports = class UserController {
     const { email, password } = req.body;
 
     if (!email) {
-      return res.status(422).json({ message: "O email é obrigatorio" });
+      return res.status(422).json({ message: "O email é obrigatório" });
     }
     if (!password) {
-      return res.status(422).json({ message: "A senha é obrigatorio" });
+      return res.status(422).json({ message: "A senha é obrigatória" });
     }
 
     // check if user exists
@@ -95,7 +94,7 @@ module.exports = class UserController {
     if (!user) {
       return res
         .status(422)
-        .json({ message: "Não há usuario cadastrado com esse email" });
+        .json({ message: "Não há usuário cadastrado com esse email" });
     }
 
     // check if password matches with db password
@@ -107,6 +106,14 @@ module.exports = class UserController {
       });
     }
 
+    // Check if user is validated
+    if (user.role === "not-validated") {
+      return res.status(403).json({
+        message:
+          "Seu cadastro ainda não foi validado. Por favor, entre em contato com o administrador.",
+      });
+    }
+
     return await createUserToken(user, req, res);
   }
 
@@ -115,11 +122,20 @@ module.exports = class UserController {
 
     if (req.headers.authorization) {
       const token = getToken(req);
-      const decoded = jwt.verify(token, "aquicolocaosecret");
+      const secret = process.env.JWT_SECRET;
 
-      currentUser = await User.findOne({ where: { id: decoded.id } });
+      try {
+        const decoded = jwt.verify(token, secret);
 
-      currentUser.password = undefined;
+        currentUser = await User.findOne({
+          where: { id: decoded.id },
+          attributes: { exclude: ["password"] },
+        });
+
+        currentUser.password = undefined;
+      } catch (err) {
+        return res.status(400).json({ message: "Token inválido!" });
+      }
     } else {
       currentUser = null;
     }
@@ -130,18 +146,22 @@ module.exports = class UserController {
   static async getUserById(req, res) {
     const id = req.params.id;
 
-    const user = await User.findOne({
-      where: { id },
-      attributes: { exclude: ["password"] },
-    });
-
-    if (!user) {
-      return res.status(422).json({
-        message: "Usuário não encontrado!",
+    try {
+      const user = await User.findOne({
+        where: { id },
+        attributes: { exclude: ["password"] },
       });
-    }
 
-    return res.status(200).json({ user });
+      if (!user) {
+        return res.status(422).json({
+          message: "Usuário não encontrado!",
+        });
+      }
+
+      return res.status(200).json(user);
+    } catch (error) {
+      return res.status(500).json({ message: error.message });
+    }
   }
 
   static async getUsersByDepartment(req, res) {
@@ -156,23 +176,13 @@ module.exports = class UserController {
       if (!users || users.length === 0) {
         return res
           .status(404)
-          .json({ message: "No users found in this department" });
+          .json({ message: "Nenhum usuário encontrado neste departamento" });
       }
 
       return res.status(200).json(users);
     } catch (error) {
       return res.status(500).json({ message: error.message });
     }
-  }
-
-  static async getAllUsers(req, res) {
-    const users = await User.findAll();
-
-    if (!users || users.length === 0) {
-      return res.status(404).json({ message: "No users found!" });
-    }
-
-    return res.status(200).json(users);
   }
 
   static async editUser(req, res) {
@@ -205,6 +215,19 @@ module.exports = class UserController {
       });
     } catch (err) {
       return res.status(500).json({ message: err });
+    }
+  }
+
+  // Método para obter todos os usuários
+  static async getAllUsers(req, res) {
+    try {
+      const users = await User.findAll({
+        attributes: ["id", "name", "email", "department", "ramal", "role"],
+      });
+      res.status(200).json({ users });
+    } catch (error) {
+      console.error("Erro ao buscar usuários:", error);
+      res.status(500).json({ message: "Erro ao buscar os usuários." });
     }
   }
 };

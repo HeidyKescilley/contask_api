@@ -5,7 +5,18 @@ const Company = require("../models/Company");
 const StatusHistory = require("../models/StatusHistory");
 const User = require("../models/User");
 const transporter = require("../services/emailService");
-const { suspesionTemplate } = require("../emails/templates");
+const {
+  activeTemplate,
+  closedTemplate,
+  terminatedTemplate,
+  suspendedTemplate,
+  newCompanyTemplate,
+} = require("../emails/templates");
+const ContactMode = require("../models/ContactMode");
+const Automation = require("../models/Automation");
+const getToken = require("../helpers/get-token");
+const formatDate = require("../helpers/format-date");
+const getUserByToken = require("../helpers/get-user-by-token");
 
 module.exports = class CompanyController {
   static async addCompany(req, res) {
@@ -56,6 +67,7 @@ module.exports = class CompanyController {
         phone,
         uf,
         openedByUs,
+        important_info,
         status: "ATIVA", // Status padrão ao criar uma nova empresa
         statusUpdatedAt: new Date(),
         obs,
@@ -68,10 +80,7 @@ module.exports = class CompanyController {
         companyId: newCompany.id,
       });
 
-      // Opcional: Enviar email para os responsáveis com as informações importantes
-      if (important_info) {
-        // Lógica para enviar email com important_info
-      }
+      await CompanyController.sendCompanyRegisteredEmails(newCompany);
 
       // Retornar os dados da nova empresa
       return res.status(201).json({
@@ -84,67 +93,60 @@ module.exports = class CompanyController {
     }
   }
 
-  // Função para editar uma empresa (possivelmente ausente)
-  static async editCompany(req, res) {
+  static async sendCompanyRegisteredEmails(company) {
     try {
-      const { id } = req.params;
-      const {
-        num,
-        name,
-        cnpj,
-        ie,
-        rule,
-        classi,
-        contractInit,
-        contact,
-        email,
-        phone,
-        uf,
-        openedByUs,
-        obs,
-        respFiscalId,
-        respContabilId,
-        respDpId,
-      } = req.body;
+      // Obter todos os e-mails dos usuários
+      const users = await User.findAll({ attributes: ["email"] });
+      const userEmails = users.map((user) => user.email);
 
-      // Validações básicas
-      if (!id || !name || !rule || !classi || !contact || !email) {
-        return res
-          .status(400)
-          .json({ message: "Campos obrigatórios faltando." });
-      }
+      // Converter o objeto company para um objeto plano
+      const companyData = company.get({ plain: true });
 
-      // Encontrar a empresa
+      companyData.contractInit = formatDate(companyData.contractInit);
+
+      // Preparar o conteúdo do e-mail usando o template
+      const emailContent = newCompanyTemplate({ company: companyData });
+
+      const emailSubject = `Nova empresa cadastrada: ${company.name}`;
+
+      // Enviar e-mail para todos os usuários
+      await transporter.sendMail({
+        from: '"Contask" <naoresponda@contelb.com.br>',
+        to: userEmails.join(","),
+        subject: emailSubject,
+        html: emailContent,
+      });
+    } catch (error) {
+      console.error("Erro ao enviar e-mail de nova empresa:", error);
+      // Você pode decidir como lidar com o erro (log, rethrow, etc.)
+    }
+  }
+
+  static async editCompany(req, res) {
+    const { id } = req.params;
+    const companyData = req.body;
+
+    try {
       const company = await Company.findByPk(id);
       if (!company) {
         return res.status(404).json({ message: "Empresa não encontrada." });
       }
 
-      // Atualizar os dados da empresa
-      company.name = name;
-      company.ie = ie;
-      company.rule = rule;
-      company.classi = classi;
-      company.contractInit = contractInit;
-      company.contact = contact;
-      company.email = email;
-      company.phone = phone;
-      company.uf = uf;
-      company.openedByUs = openedByUs;
-      company.obs = obs;
-      company.respFiscalId = respFiscalId;
-      company.respContabilId = respContabilId;
-      company.respDpId = respDpId;
+      // Atualiza os dados da empresa
+      await company.update(companyData);
 
-      await company.save();
+      // Atualiza as automações associadas
+      if (companyData.automationIds) {
+        await company.setAutomations(companyData.automationIds);
+      }
 
       return res.status(200).json({
         message: "Empresa atualizada com sucesso.",
-        company: company,
+        company,
       });
     } catch (error) {
-      console.error("Erro ao atualizar empresa:", error);
-      return res.status(500).json({ message: "Erro ao atualizar empresa." });
+      console.error("Error updating company:", error);
+      return res.status(500).json({ message: error.message });
     }
   }
 
@@ -155,6 +157,7 @@ module.exports = class CompanyController {
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
           { model: User, as: "respContabil", attributes: ["id", "name"] },
           { model: User, as: "respDp", attributes: ["id", "name"] },
+          { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
         ],
       });
       if (allCompanies.length > 0) {
@@ -169,23 +172,27 @@ module.exports = class CompanyController {
   }
 
   static async getOne(req, res) {
-    const { id } = req.params;
+    const id = req.params.id;
 
     try {
       const company = await Company.findOne({
         where: { id },
         include: [
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
-          { model: User, as: "respContabil", attributes: ["id", "name"] },
           { model: User, as: "respDp", attributes: ["id", "name"] },
+          { model: User, as: "respContabil", attributes: ["id", "name"] },
+          { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
+          { model: Automation, as: "automations", attributes: ["id", "name"] }, // Linha adicionada
         ],
       });
-      if (company) {
-        return res.status(200).json(company);
-      } else {
-        return res.status(404).json({ message: "Company not found" });
+
+      if (!company) {
+        return res.status(404).json({ message: "Empresa não encontrada." });
       }
+
+      return res.status(200).json(company);
     } catch (error) {
+      console.error("Error fetching company:", error);
       return res.status(500).json({ message: error.message });
     }
   }
@@ -215,7 +222,11 @@ module.exports = class CompanyController {
       });
 
       // Enviar emails após a atualização do status
-      await CompanyController.sendStatusChangeEmails(company, newStatus);
+      await CompanyController.sendStatusChangeEmails(
+        company,
+        newStatus,
+        statusDate
+      );
 
       return res
         .status(200)
@@ -226,41 +237,73 @@ module.exports = class CompanyController {
   }
 
   // New method to send emails
-  static async sendStatusChangeEmails(company, newStatus) {
+  static async sendStatusChangeEmails(company, newStatus, date) {
     try {
+      const formatedDate = formatDate(date);
       const companyName = company.name;
+      let emailContent;
+      let emailSubject = `${companyName} - Atualização de Status`;
 
-      const htmlContent = suspensionTemplate({ companyName, newStatus });
+      switch (newStatus) {
+        case "ATIVA":
+          emailContent = activeTemplate({
+            companyName,
+            newStatus,
+            formatedDate,
+          });
+          break;
+        case "BAIXADA":
+          emailContent = closedTemplate({
+            companyName,
+            newStatus,
+            formatedDate,
+          });
+          break;
+        case "DISTRATO":
+          emailContent = terminatedTemplate({
+            companyName,
+            newStatus,
+            formatedDate,
+          });
+          break;
+        case "SUSPENSA":
+          emailContent = suspendedTemplate({
+            companyName,
+            newStatus,
+            formatedDate,
+          });
+          break;
+        default:
+          emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
+      }
 
-      const subject = `${companyName} NOVO STATUS`;
+      // Obter todos os e-mails dos usuários
+      const users = await User.findAll({ attributes: ["email"] });
+      const userEmails = users.map((user) => user.email);
 
+      // Enviar e-mail para os usuários
+      await transporter.sendMail({
+        from: '"Contask" <naoresponda@contelb.com.br>',
+        to: userEmails.join(","),
+        subject: emailSubject,
+        html: emailContent,
+      });
+
+      // Se o status for "SUSPENSA", enviar e-mail também para os e-mails da empresa
       if (newStatus === "SUSPENSA" && company.email) {
         const companyEmails = company.email
           .split(",")
           .map((email) => email.trim());
 
-        for (const email of companyEmails) {
-          await transporter.sendMail({
-            from: '"Contask" <naoresponda@contelb.com.br>',
-            to: email,
-            subject: subject,
-            html: htmlContent,
-          });
-        }
+        await transporter.sendMail({
+          from: '"Contask" <naoresponda@contelb.com.br>',
+          to: companyEmails.join(","),
+          subject: emailSubject,
+          html: emailContent,
+        });
       }
-
-      // Send email to all registered users
-      const users = await User.findAll({ attributes: ["email"] });
-      const userEmails = users.map((user) => user.email);
-
-      await transporter.sendMail({
-        from: '"Contask" <naoresponda@contelb.com.br>',
-        to: userEmails.join(","),
-        subject: subject,
-        html: htmlContent,
-      });
     } catch (error) {
-      console.error("Error sending emails:", error);
+      console.error("Erro ao enviar e-mails:", error);
     }
   }
 
@@ -346,32 +389,35 @@ module.exports = class CompanyController {
 
   static async getMyCompanies(req, res) {
     try {
-      const userId = req.user.id;
+      const token = await getToken(req);
+      const user = await getUserByToken(token);
 
-      console.log("Logged-in user ID:", userId);
+      let whereClause = {};
+
+      // Filtrar empresas com base no departamento do usuário
+      if (user.department === "Fiscal") {
+        whereClause.respFiscalId = user.id;
+      } else if (user.department === "Pessoal") {
+        whereClause.respDpId = user.id;
+      } else if (user.department === "Contábil") {
+        whereClause.respContabilId = user.id;
+      } else {
+        // Se o usuário não pertence a um departamento específico, retornar vazio ou todas as empresas
+        return res.status(200).json([]);
+      }
 
       const companies = await Company.findAll({
-        where: {
-          [Op.or]: [
-            { respFiscalId: userId },
-            { respDpId: userId },
-            { respContabilId: userId },
-          ],
-        },
+        where: whereClause,
         include: [
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
           { model: User, as: "respDp", attributes: ["id", "name"] },
           { model: User, as: "respContabil", attributes: ["id", "name"] },
+          { model: ContactMode, as: "contactMode", attributes: ["id", "name"] }, // Adicione esta linha
         ],
       });
 
-      if (!companies || companies.length === 0) {
-        return res.status(200).json([]);
-      }
-
       return res.status(200).json(companies);
     } catch (error) {
-      console.error("Error fetching user's companies:", error);
       return res.status(500).json({ message: error.message });
     }
   }

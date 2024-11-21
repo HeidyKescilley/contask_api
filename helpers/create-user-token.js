@@ -2,13 +2,17 @@
 const jwt = require("jsonwebtoken");
 
 const createUserToken = async (user, req, res) => {
+  // use your environment variable or a consistent secret key
+  const secret = process.env.JWT_SECRET;
+
   // create a token
   const token = jwt.sign(
     {
       name: user.name,
       id: user.id,
+      role: user.role,
     },
-    "aquicolocaosecret"
+    secret
   );
 
   // return token
@@ -16,7 +20,7 @@ const createUserToken = async (user, req, res) => {
     message: "Você está autenticado",
     token,
     userId: user.id,
-    isAdministrator: user.administrator,
+    role: user.role,
     department: user.department,
     userName: user.name,
   });

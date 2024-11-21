@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Informativo de Prestação de Serviços</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+        color: #333;
+      }
+      .container {
+        width: 100%;
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      .header {
+        background-color: #0056b3;
+        color: #ffffff;
+        padding: 10px;
+        text-align: center;
+        border-radius: 8px 8px 0 0;
+      }
+      .content {
+        padding: 20px;
+        color: #333;
+        line-height: 1.6;
+      }
+      .content p {
+        margin: 15px 0;
+      }
+      .content strong {
+        color: #0056b3;
+      }
+      .footer {
+        padding: 10px;
+        text-align: center;
+        font-size: 12px;
+        color: #666;
+        background-color: #e6f2ff;
+        border-radius: 0 0 8px 8px;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid #0056b3;
+        margin: 20px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h2>Informativo de Prestação de Serviços</h2>
+      </div>
+      <div class="content">
+        <p>Prezados, bom dia!</p>
+        <p>
+          Gostaria de informar o início da prestação de serviços para a empresa
+          <strong>{{company.name}}</strong>.
+        </p>
+
+        <p>
+          {{#if company.openedByUs}} Empresa aberta pela Contelb. {{else}}
+          Empresa veio de outro escritório. {{/if}}
+        </p>
+
+        <p>Regime tributário: <strong>{{company.rule}}</strong></p>
+        <p>Numeração no Questor: <strong>{{company.num}}</strong></p>
+        <p>Observação: <strong>{{company.obs}}</strong></p>
+
+        <hr />
+
+        <p><strong>Atenção:</strong></p>
+        <p>{{company.important_info}}</p>
+
+        <hr />
+
+        <p>
+          Contudo, favor se atentarem para a data de início dos trabalhos
+          <strong>{{company.contractInit}}</strong>.
+        </p>
+
+        <hr />
+
+        <p>Abaixo os dados para contato com o cliente:</p>
+        <p>
+          Contato: <strong>{{company.phone}}</strong> Sr(a).
+          <strong>{{company.contact}}</strong>
+        </p>
+        <p>E-mail: <strong>{{company.email}}</strong></p>
+      </div>
+      <div class="footer">
+        <p>
+          Eventuais dúvidas, estou à disposição para maiores esclarecimentos.
+        </p>
+        <p>Cordialmente.</p>
+      </div>
+    </div>
+  </body>
+</html>

@@ -43,10 +43,14 @@ app.use(express.static("public"));
 const UserRoutes = require("./routes/UserRoutes");
 const CompanyRoutes = require("./routes/CompanyRoutes");
 const AlertRoutes = require("./routes/AlertRoutes");
+const automationRoutes = require("./routes/AutomationRoutes");
+const AdminRoutes = require("./routes/AdminRoutes");
 
 app.use("/", UserRoutes);
 app.use("/company", CompanyRoutes);
 app.use("/alerts", AlertRoutes);
+app.use("/automation", automationRoutes);
+app.use("/admin", AdminRoutes);
 
 sequelize
   .sync({ force: false, alter: false })

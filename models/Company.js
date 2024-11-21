@@ -78,8 +78,17 @@ const Company = db.define(
         key: "id",
       },
     },
-    zen: {
-      type: DataTypes.BOOLEAN,
+    contactModeId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: "ContactModes",
+        key: "id",
+      },
+    },
+    important_info: {
+      type: DataTypes.TEXT,
+      allowNull: true,
     },
     openedByUs: {
       type: DataTypes.BOOLEAN,

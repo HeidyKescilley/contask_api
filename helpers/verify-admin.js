@@ -1,11 +1,12 @@
-// /helpers/verify-token.js
+// /helpers/verify-admin.js
 const jwt = require("jsonwebtoken");
 const getToken = require("./get-token");
 
-// middleware to validate token
-const secret = process.env.JWT_SECRET;
+// use your environment variable or a consistent secret key
+const secret = process.env.JWT_SECRET || "seu-segredo-aqui";
 
-const checkToken = (req, res, next) => {
+// middleware to validate admin role
+const checkAdmin = (req, res, next) => {
   if (!req.headers.authorization) {
     return res.status(401).json({ message: "Acesso Negado!" });
   }
@@ -18,6 +19,11 @@ const checkToken = (req, res, next) => {
 
   try {
     const verified = jwt.verify(token, secret);
+    if (verified.role !== "admin") {
+      return res
+        .status(403)
+        .json({ message: "Acesso restrito a administradores." });
+    }
     req.user = verified;
     next();
   } catch (err) {
@@ -25,4 +31,4 @@ const checkToken = (req, res, next) => {
   }
 };
 
-module.exports = checkToken;
+module.exports = checkAdmin;

@@ -6,7 +6,6 @@ const CompanyController = require("../controllers/CompanyController");
 // Middleware
 const verifyToken = require("../helpers/verify-token");
 
-// Define more specific routes first
 router.post("/add", verifyToken, CompanyController.addCompany);
 router.patch("/edit/:id", verifyToken, CompanyController.editCompany);
 router.get("/all", verifyToken, CompanyController.getAll);
@@ -32,6 +31,19 @@ router.get(
   CompanyController.getRecentCompanies
 );
 router.get("/my-companies", verifyToken, CompanyController.getMyCompanies);
+
+// Nova rota para obter todas as formas de envio
+const ContactModeController = require("../controllers/ContactModeController");
+router.post(
+  "/contact-modes",
+  verifyToken,
+  ContactModeController.createContactMode
+);
+router.get(
+  "/contact-modes",
+  verifyToken,
+  ContactModeController.getAllContactModes
+);
 
 // Place the parameterized route last
 router.get("/:id", verifyToken, CompanyController.getOne);

@@ -12,6 +12,7 @@ const User = db.define("User", {
     type: DataTypes.STRING,
     require: true,
     allowNull: false,
+    unique: true,
   },
   birthday: {
     type: DataTypes.DATE,
@@ -23,8 +24,10 @@ const User = db.define("User", {
     require: true,
     allowNull: false,
   },
-  administrator: {
-    type: DataTypes.BOOLEAN,
+  role: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: "not-validated",
   },
   password: {
     type: DataTypes.STRING,
