@@ -4,6 +4,7 @@ const AlertController = require("../controllers/AlertController");
 const verifyToken = require("../helpers/verify-token");
 const multer = require("multer");
 const path = require("path");
+const activityLogger = require("../middlewares/activityLogger"); // Importa o middleware de logging
 
 // Set up Multer storage for attachments
 const storage = multer.diskStorage({
@@ -22,6 +23,7 @@ router.post(
   "/create",
   verifyToken,
   upload.array("attachments"),
+  activityLogger,
   AlertController.createAlert
 );
 

@@ -9,6 +9,7 @@ const getToken = require("../helpers/get-token");
 const getUserByToken = require("../helpers/get-user-by-token");
 const path = require("path");
 const cheerio = require("cheerio");
+const logger = require("../logger/logger"); // Importa o logger do Winston
 
 module.exports = class AlertController {
   static async createAlert(req, res) {
@@ -16,6 +17,10 @@ module.exports = class AlertController {
       const { title, content, type } = req.body;
       let { departments, companyIds } = req.body;
       const files = req.files;
+
+      logger.info(
+        `Usuário (${req.user.email}) está criando um alerta do tipo: ${type} com título: "${title}"`
+      );
 
       // Parse departments and companyIds if they are strings
       if (typeof departments === "string") {
@@ -27,6 +32,7 @@ module.exports = class AlertController {
 
       // Validate required fields
       if (!title || !content || !type) {
+        logger.warn("Criação de alerta falhou: Campos obrigatórios faltando.");
         return res
           .status(400)
           .json({ message: "Título, conteúdo e tipo são obrigatórios." });
@@ -46,6 +52,7 @@ module.exports = class AlertController {
 
       if (type === "internal") {
         if (!departments || departments.length === 0) {
+          logger.warn("Criação de alerta falhou: Departamentos obrigatórios.");
           return res.status(400).json({
             message: "Departamentos são obrigatórios para alertas internos.",
           });
@@ -53,12 +60,14 @@ module.exports = class AlertController {
         alertData.departments = departments;
       } else if (type === "external") {
         if (!companyIds || companyIds.length === 0) {
+          logger.warn("Criação de alerta falhou: Empresas obrigatórias.");
           return res.status(400).json({
             message: "Empresas são obrigatórias para alertas externos.",
           });
         }
         alertData.companyIds = companyIds;
       } else {
+        logger.warn(`Criação de alerta falhou: Tipo inválido - ${type}`);
         return res.status(400).json({ message: "Tipo de alerta inválido." });
       }
 
@@ -95,6 +104,10 @@ module.exports = class AlertController {
       alertData.content = processedContent;
       const newAlert = await Alert.create(alertData);
 
+      logger.info(
+        `Alerta criado com sucesso: ${newAlert.id} por ${user.email}`
+      );
+
       // Send emails
       if (type === "internal") {
         // Send to users in the selected departments
@@ -112,7 +125,12 @@ module.exports = class AlertController {
           title,
           processedContent,
           attachments,
-          type // Pass the type to the sendEmails function
+          type // Passa o tipo para a função sendEmails
+        );
+        logger.info(
+          `Emails enviados para ${
+            userEmails.length
+          } usuários nas departamentos ${departments.join(", ")}`
         );
       } else if (type === "external") {
         // Send to companies with the selected IDs
@@ -140,7 +158,10 @@ module.exports = class AlertController {
           title,
           processedContent,
           attachments,
-          type // Pass the type to the sendEmails function
+          type // Passa o tipo para a função sendEmails
+        );
+        logger.info(
+          `Emails enviados para ${companyEmails.length} emails das empresas selecionadas`
         );
       }
 
@@ -149,7 +170,7 @@ module.exports = class AlertController {
         newAlert,
       });
     } catch (error) {
-      console.error("Error creating alert:", error);
+      logger.error(`Erro ao criar alerta: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
@@ -178,8 +199,9 @@ module.exports = class AlertController {
 
         await transporter.sendMail(mailOptions);
       }
+      logger.info(`Emails enviados para ${recipients.length} destinatários.`);
     } catch (error) {
-      console.error("Error sending emails:", error);
+      logger.error(`Erro ao enviar emails: ${error.message}`);
       throw error;
     }
   }

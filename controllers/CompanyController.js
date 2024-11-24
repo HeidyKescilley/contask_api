@@ -17,6 +17,7 @@ const Automation = require("../models/Automation");
 const getToken = require("../helpers/get-token");
 const formatDate = require("../helpers/format-date");
 const getUserByToken = require("../helpers/get-user-by-token");
+const logger = require("../logger/logger"); // Importa o logger do Winston
 
 module.exports = class CompanyController {
   static async addCompany(req, res) {
@@ -38,8 +39,13 @@ module.exports = class CompanyController {
         obs,
       } = req.body;
 
+      logger.info(
+        `Usuário (${req.user.email}) está adicionando a empresa: ${name} (CNPJ: ${cnpj})`
+      );
+
       // Validações básicas
       if (!num || !name || !cnpj || !rule || !classi || !contact || !email) {
+        logger.warn("Adição de empresa falhou: Campos obrigatórios faltando.");
         return res
           .status(400)
           .json({ message: "Campos obrigatórios faltando." });
@@ -48,6 +54,9 @@ module.exports = class CompanyController {
       // Verificar se a empresa já existe pelo CNPJ
       const existingCompany = await Company.findOne({ where: { cnpj } });
       if (existingCompany) {
+        logger.warn(
+          `Adição de empresa falhou: Empresa com CNPJ ${cnpj} já existe.`
+        );
         return res
           .status(400)
           .json({ message: "Já existe uma empresa com este CNPJ." });
@@ -80,6 +89,10 @@ module.exports = class CompanyController {
         companyId: newCompany.id,
       });
 
+      logger.info(
+        `Empresa criada com sucesso: ${name} (ID: ${newCompany.id}) por ${req.user.email}`
+      );
+
       await CompanyController.sendCompanyRegisteredEmails(newCompany);
 
       // Retornar os dados da nova empresa
@@ -88,7 +101,7 @@ module.exports = class CompanyController {
         company: newCompany,
       });
     } catch (error) {
-      console.error("Erro ao criar empresa:", error);
+      logger.error(`Erro ao adicionar empresa: ${error.message}`);
       return res.status(500).json({ message: "Erro ao criar empresa." });
     }
   }
@@ -116,8 +129,14 @@ module.exports = class CompanyController {
         subject: emailSubject,
         html: emailContent,
       });
+
+      logger.info(
+        `Emails de registro de empresa enviados para ${userEmails.length} usuários.`
+      );
     } catch (error) {
-      console.error("Erro ao enviar e-mail de nova empresa:", error);
+      logger.error(
+        `Erro ao enviar emails de registro de empresa: ${error.message}`
+      );
       // Você pode decidir como lidar com o erro (log, rethrow, etc.)
     }
   }
@@ -129,8 +148,15 @@ module.exports = class CompanyController {
     try {
       const company = await Company.findByPk(id);
       if (!company) {
+        logger.warn(
+          `Edição de empresa falhou: Empresa não encontrada (ID: ${id})`
+        );
         return res.status(404).json({ message: "Empresa não encontrada." });
       }
+
+      logger.info(
+        `Empresa (${company.name}, ID: ${id}) está sendo editada por ${req.user.email}`
+      );
 
       // Atualiza os dados da empresa
       await company.update(companyData);
@@ -140,18 +166,23 @@ module.exports = class CompanyController {
         await company.setAutomations(companyData.automationIds);
       }
 
+      logger.info(
+        `Empresa atualizada com sucesso: ${company.name} (ID: ${id})`
+      );
+
       return res.status(200).json({
         message: "Empresa atualizada com sucesso.",
         company,
       });
     } catch (error) {
-      console.error("Error updating company:", error);
+      logger.error(`Erro ao editar empresa: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
 
   static async getAll(req, res) {
     try {
+      logger.info(`Usuário (${req.user.email}) solicitou todas as empresas.`);
       const allCompanies = await Company.findAll({
         include: [
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
@@ -163,10 +194,11 @@ module.exports = class CompanyController {
       if (allCompanies.length > 0) {
         return res.status(200).json(allCompanies);
       } else {
-        return res.status(404).json({ message: "No companies found" });
+        logger.warn("Nenhuma empresa encontrada.");
+        return res.status(404).json({ message: "Nenhuma empresa encontrada" });
       }
     } catch (error) {
-      console.error("Error fetching all companies:", error);
+      logger.error(`Erro ao buscar todas as empresas: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
@@ -187,12 +219,16 @@ module.exports = class CompanyController {
       });
 
       if (!company) {
+        logger.warn(
+          `Obtenção de empresa falhou: Empresa não encontrada (ID: ${id})`
+        );
         return res.status(404).json({ message: "Empresa não encontrada." });
       }
 
+      logger.info(`Empresa obtida com sucesso: ${company.name} (ID: ${id})`);
       return res.status(200).json(company);
     } catch (error) {
-      console.error("Error fetching company:", error);
+      logger.error(`Erro ao obter empresa: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
@@ -206,6 +242,9 @@ module.exports = class CompanyController {
       const company = await Company.findByPk(companyId);
 
       if (!company) {
+        logger.warn(
+          `Alteração de status falhou: Empresa não encontrada (ID: ${companyId})`
+        );
         return res.status(404).json({ message: "Empresa não encontrada." });
       }
 
@@ -221,6 +260,10 @@ module.exports = class CompanyController {
         companyId: companyId,
       });
 
+      logger.info(
+        `Status da empresa alterado: ${company.name} de ${company.status} para ${newStatus} por ${req.user.email}`
+      );
+
       // Enviar emails após a atualização do status
       await CompanyController.sendStatusChangeEmails(
         company,
@@ -232,6 +275,7 @@ module.exports = class CompanyController {
         .status(200)
         .json({ message: "Status da empresa atualizado com sucesso." });
     } catch (error) {
+      logger.error(`Erro ao alterar status da empresa: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
@@ -289,6 +333,10 @@ module.exports = class CompanyController {
         html: emailContent,
       });
 
+      logger.info(
+        `Emails de alteração de status enviados para ${userEmails.length} usuários.`
+      );
+
       // Se o status for "SUSPENSA", enviar e-mail também para os e-mails da empresa
       if (newStatus === "SUSPENSA" && company.email) {
         const companyEmails = company.email
@@ -301,9 +349,15 @@ module.exports = class CompanyController {
           subject: emailSubject,
           html: emailContent,
         });
+
+        logger.info(
+          `Emails de suspensão enviados para ${companyEmails.length} emails da empresa ${companyName}.`
+        );
       }
     } catch (error) {
-      console.error("Erro ao enviar e-mails:", error);
+      logger.error(
+        `Erro ao enviar emails de alteração de status: ${error.message}`
+      );
     }
   }
 
@@ -311,12 +365,18 @@ module.exports = class CompanyController {
     const { id } = req.params; // Company ID
 
     try {
+      logger.info(
+        `Usuário (${req.user.email}) solicitou histórico de status para a empresa ID: ${id}`
+      );
       const history = await StatusHistory.findAll({
         where: { companyId: id },
         order: [["date", "DESC"]], // Change to 'ASC' if you want oldest first
       });
 
       if (!history || history.length === 0) {
+        logger.warn(
+          `Histórico de status não encontrado para a empresa ID: ${id}`
+        );
         return res
           .status(404)
           .json({ message: "No history found for this company." });
@@ -324,13 +384,16 @@ module.exports = class CompanyController {
 
       return res.status(200).json(history);
     } catch (error) {
-      console.error("Error fetching status history:", error);
+      logger.error(`Erro ao buscar histórico de status: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
 
   static async getRecentStatusChanges(req, res) {
     try {
+      logger.info(
+        `Usuário (${req.user.email}) solicitou as últimas mudanças de status.`
+      );
       const recentCompanies = await Company.findAll({
         where: {
           status: {
@@ -344,13 +407,18 @@ module.exports = class CompanyController {
 
       return res.status(200).json(recentCompanies);
     } catch (error) {
-      console.error("Error fetching recent status changes:", error);
+      logger.error(
+        `Erro ao buscar mudanças recentes de status: ${error.message}`
+      );
       return res.status(500).json({ message: error.message });
     }
   }
 
   static async getRecentActiveCompanies(req, res) {
     try {
+      logger.info(
+        `Usuário (${req.user.email}) solicitou as últimas empresas ativas.`
+      );
       const recentCompanies = await Company.findAll({
         where: {
           status: "ATIVA",
@@ -362,13 +430,16 @@ module.exports = class CompanyController {
 
       return res.status(200).json(recentCompanies);
     } catch (error) {
-      console.error("Error fetching recent active companies:", error);
+      logger.error(`Erro ao buscar empresas ativas recentes: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
 
   static async getRecentCompanies(req, res) {
     try {
+      logger.info(
+        `Usuário (${req.user.email}) solicitou as últimas empresas adicionadas.`
+      );
       const recentCompanies = await Company.findAll({
         include: [
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
@@ -382,7 +453,7 @@ module.exports = class CompanyController {
 
       return res.status(200).json(recentCompanies);
     } catch (error) {
-      console.error("Error fetching recent companies:", error);
+      logger.error(`Erro ao buscar empresas recentes: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
@@ -402,7 +473,9 @@ module.exports = class CompanyController {
       } else if (user.department === "Contábil") {
         whereClause.respContabilId = user.id;
       } else {
-        // Se o usuário não pertence a um departamento específico, retornar vazio ou todas as empresas
+        logger.warn(
+          `Usuário (${user.email}) não pertence a nenhum departamento específico.`
+        );
         return res.status(200).json([]);
       }
 
@@ -412,12 +485,16 @@ module.exports = class CompanyController {
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
           { model: User, as: "respDp", attributes: ["id", "name"] },
           { model: User, as: "respContabil", attributes: ["id", "name"] },
-          { model: ContactMode, as: "contactMode", attributes: ["id", "name"] }, // Adicione esta linha
+          { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
         ],
       });
 
+      logger.info(
+        `Usuário (${user.email}) solicitou suas empresas. Total encontrado: ${companies.length}`
+      );
       return res.status(200).json(companies);
     } catch (error) {
+      logger.error(`Erro ao buscar empresas do usuário: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }

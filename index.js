@@ -1,6 +1,9 @@
 // /index.js
 const express = require("express");
 const cors = require("cors");
+const morgan = require("morgan"); // Importa Morgan
+const logger = require("./logger/logger"); // Importa o logger do Winston
+const activityLogger = require("./middlewares/activityLogger"); // Importa o middleware de activity logger
 
 const app = express();
 
@@ -39,6 +42,12 @@ app.use(
 // Public folder
 app.use(express.static("public"));
 
+// Setup Morgan para usar o stream do Winston
+app.use(morgan("combined", { stream: logger.stream }));
+
+// Middleware para logar atividades do usuário
+// app.use(activityLogger);
+
 // Routes
 const UserRoutes = require("./routes/UserRoutes");
 const CompanyRoutes = require("./routes/CompanyRoutes");
@@ -52,13 +61,16 @@ app.use("/alerts", AlertRoutes);
 app.use("/automation", automationRoutes);
 app.use("/admin", AdminRoutes);
 
+const errorHandler = require("./middlewares/errorHandler");
+app.use(errorHandler);
+
 sequelize
   .sync({ force: false, alter: false })
   .then(() => {
     app.listen(process.env.PORT, () => {
-      console.log(
-        `Server is running on http://${process.env.HOST}:${process.env.PORT}`
+      logger.info(
+        `Servidor rodando em http://${process.env.HOST}:${process.env.PORT}`
       );
     });
   })
-  .catch((err) => console.log(err));
+  .catch((err) => logger.error(`Erro ao sincronizar o banco de dados: ${err}`));

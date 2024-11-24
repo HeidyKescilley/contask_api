@@ -1,0 +1,283 @@
+2024-11-24 06:19:00 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:19:10 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:10 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:19:10 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:10 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:19:10 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:10 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:19:10 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:10 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:19:10 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:10 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:19:10 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:10 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:19:57 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:57 [ERROR]: Erro ao buscar empresas do usuário: Token inválido!
+2024-11-24 06:19:57 [ERROR]: Erro no Activity Logger: Token inválido!
+2024-11-24 06:19:57 [ERROR]: Erro ao buscar empresas do usuário: Token inválido!
+2024-11-24 06:20:24 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:20:29 [ERROR]: Erro no Activity Logger: secret or public key must be provided
+2024-11-24 06:20:29 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:20:29 [ERROR]: Erro no Activity Logger: secret or public key must be provided
+2024-11-24 06:20:29 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:20:30 [ERROR]: Erro no Activity Logger: secret or public key must be provided
+2024-11-24 06:20:30 [ERROR]: Erro ao buscar empresas do usuário: secret or public key must be provided
+2024-11-24 06:20:30 [ERROR]: Erro no Activity Logger: secret or public key must be provided
+2024-11-24 06:20:30 [ERROR]: Erro ao buscar empresas do usuário: secret or public key must be provided
+2024-11-24 06:26:22 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:27:11 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:27:26 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:27:45 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:27:59 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:29:25 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:31:25 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:32:51 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:51 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:32:51 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:51 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:32:52 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:52 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:32:52 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:52 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:32:53 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:53 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:32:53 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:53 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:32:53 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:53 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:32:54 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:54 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:32:54 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:54 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:32:54 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:32:54 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:33:16 [INFO]: Tentativa de login para o email: kescilley@gmail.com
+2024-11-24 06:33:16 [INFO]: Usuário logado com sucesso: kescilley@gmail.com
+2024-11-24 06:33:16 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:16 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 06:33:16 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:16 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:33:16 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:16 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:33:16 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:16 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:33:16 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:16 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:33:16 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:16 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:33:16 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:16 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:33:26 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:26 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:33:26 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:26 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:33:27 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:27 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:33:27 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:27 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:33:28 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:28 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:33:28 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:28 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:33:34 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:34 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:33:34 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:34 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:33:35 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:35 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:33:35 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:33:35 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:34:28 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:37:27 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:37:34 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:38:38 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:39:10 [INFO]: getToken: Token extraído com sucesso para a rota /company/all
+2024-11-24 06:39:10 [INFO]: getToken: Token extraído com sucesso para a rota /company/all
+2024-11-24 06:39:10 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:39:10 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/all
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/all
+2024-11-24 06:39:11 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:39:11 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/my-companies
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/my-companies
+2024-11-24 06:39:11 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/my-companies
+2024-11-24 06:39:11 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/my-companies
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/my-companies
+2024-11-24 06:39:11 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:39:11 [INFO]: getToken: Token extraído com sucesso para a rota /company/my-companies
+2024-11-24 06:39:11 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:40:08 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:41:25 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:41:29 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:41:29 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:41:29 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:41:29 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:41:29 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:41:29 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:41:30 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:41:30 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:41:30 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:41:30 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:41:30 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:41:30 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:41:30 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:41:30 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:42:37 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:42:43 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:42:43 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:42:43 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 06:42:43 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:42:43 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:42:43 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 06:42:43 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:42:43 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:42:43 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:42:43 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:42:43 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:42:43 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:42:43 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided
+2024-11-24 06:42:43 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:43:37 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:43:40 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:40 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:40 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:43:40 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:40 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:40 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:43:40 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:40 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:40 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:43:40 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:40 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:40 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:43:40 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:40 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:40 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:43:40 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:40 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:40 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:43:41 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:41 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:41 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:41 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:43:41 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:41 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:43:41 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:43:41 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:45:03 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:45:15 [INFO]: Tentativa de login para o email: kescilley@gmail.com
+2024-11-24 06:45:15 [INFO]: Usuário logado com sucesso: kescilley@gmail.com
+2024-11-24 06:46:01 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:46:05 [INFO]: Tentativa de login para o email: kescilley@gmail.com
+2024-11-24 06:46:05 [INFO]: Usuário logado com sucesso: kescilley@gmail.com
+2024-11-24 06:46:05 [INFO]: aqui está o segredo do JWT secret: yE98KJ|4xgHs
+2024-11-24 06:46:05 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:05 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:05 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 06:46:05 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:05 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:05 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:46:05 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:05 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:05 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:46:05 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:05 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:05 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:46:05 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:05 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:05 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:46:05 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:05 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:05 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:46:05 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:05 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:05 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:46:09 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:09 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:09 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:46:09 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:09 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:09 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 06:46:10 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:10 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:10 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:10 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:46:10 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:10 [ERROR]: Erro no Activity Logger: Token inválido ou expirado.
+2024-11-24 06:46:10 [ERROR]: getUserByToken: Erro na verificação do token - secret or public key must be provided secret: undefined
+2024-11-24 06:46:10 [ERROR]: Erro ao buscar empresas do usuário: Token inválido ou expirado.
+2024-11-24 06:48:05 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:48:10 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:48:19 [INFO]: Tentativa de login para o email: kescilley@gmail.com
+2024-11-24 06:48:20 [INFO]: Usuário logado com sucesso: kescilley@gmail.com
+2024-11-24 06:48:20 [INFO]: aqui está o segredo do JWT secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /user/1
+2024-11-24 06:48:20 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 06:48:20 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/status-changes
+2024-11-24 06:48:20 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:48:20 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/companies
+2024-11-24 06:48:20 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:48:20 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/active-companies
+2024-11-24 06:48:20 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:48:20 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/status-changes
+2024-11-24 06:48:20 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:48:20 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/companies
+2024-11-24 06:48:20 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:48:20 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:20 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/active-companies
+2024-11-24 06:48:20 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:48:22 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:22 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:22 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/my-companies
+2024-11-24 06:48:22 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:22 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:22 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
+2024-11-24 06:48:22 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:22 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:22 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/my-companies
+2024-11-24 06:48:22 [INFO]: getUserByToken: Token verificado com sucesso para o usuário ID: 1 secret: yE98KJ|4xgHs
+2024-11-24 06:48:22 [INFO]: getUserByToken: Usuário encontrado: Heidy K.
+2024-11-24 06:48:22 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
+2024-11-24 06:48:57 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:49:30 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:49:38 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:50:07 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:50:19 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:51:24 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:51:39 [INFO]: Servidor rodando em http://0.0.0.0:5000
+2024-11-24 06:51:56 [INFO]: Tentativa de login para o email: kescilley@gmail.com
+2024-11-24 06:51:56 [INFO]: Usuário logado com sucesso: kescilley@gmail.com
+2024-11-24 06:51:56 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /user/1
+2024-11-24 06:51:56 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 06:51:56 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/status-changes
+2024-11-24 06:51:56 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:51:57 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/active-companies
+2024-11-24 06:51:57 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:51:57 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/companies
+2024-11-24 06:51:57 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:51:57 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/status-changes
+2024-11-24 06:51:57 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 06:51:57 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/active-companies
+2024-11-24 06:51:57 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 06:51:57 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/companies
+2024-11-24 06:51:57 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 06:51:59 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/my-companies
+2024-11-24 06:51:59 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
+2024-11-24 06:51:59 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/my-companies
+2024-11-24 06:51:59 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
