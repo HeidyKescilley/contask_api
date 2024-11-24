@@ -281,3 +281,29 @@
 2024-11-24 06:51:59 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
 2024-11-24 06:51:59 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/my-companies
 2024-11-24 06:51:59 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
+2024-11-24 07:05:28 [INFO]: Servidor rodando em http://localhost:5000
+2024-11-24 07:06:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /user/1
+2024-11-24 07:06:20 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 07:06:20 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /user/1
+2024-11-24 07:06:20 [INFO]: Usuário obtido com sucesso: kescilley@gmail.com
+2024-11-24 07:06:24 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/status-changes
+2024-11-24 07:06:24 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 07:06:24 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/active-companies
+2024-11-24 07:06:24 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 07:06:24 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/companies
+2024-11-24 07:06:24 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 07:06:24 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/status-changes
+2024-11-24 07:06:24 [INFO]: Usuário (undefined) solicitou as últimas mudanças de status.
+2024-11-24 07:06:24 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/active-companies
+2024-11-24 07:06:24 [INFO]: Usuário (undefined) solicitou as últimas empresas ativas.
+2024-11-24 07:06:24 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/recent/companies
+2024-11-24 07:06:24 [INFO]: Usuário (undefined) solicitou as últimas empresas adicionadas.
+2024-11-24 07:06:26 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/my-companies
+2024-11-24 07:06:26 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
+2024-11-24 07:06:26 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/my-companies
+2024-11-24 07:06:26 [INFO]: Usuário (kescilley@gmail.com) solicitou suas empresas. Total encontrado: 6
+2024-11-24 07:06:28 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/all
+2024-11-24 07:06:28 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 07:06:28 [INFO]: Ação do Usuário: kescilley@gmail.com (ID: 1) realizou GET em /company/all
+2024-11-24 07:06:28 [INFO]: Usuário (undefined) solicitou todas as empresas.
+2024-11-24 07:08:04 [INFO]: Servidor rodando em http://localhost:5000

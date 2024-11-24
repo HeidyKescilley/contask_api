@@ -24,7 +24,14 @@ require("./models/associations");
 app.use(express.json());
 
 // Solve CORS
-const allowedOrigins = ["http://localhost:3000", "http://localhost:5173"];
+// Solve CORS
+app.use(
+  cors({
+    origin: "*",
+  })
+);
+
+/*const allowedOrigins = ["http://localhost:3000", "http://localhost:5173"];
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -37,7 +44,7 @@ app.use(
     },
     credentials: true,
   })
-);
+);*/
 
 // Public folder
 app.use(express.static("public"));
@@ -67,7 +74,7 @@ app.use(errorHandler);
 sequelize
   .sync({ force: false, alter: false })
   .then(() => {
-    app.listen(process.env.PORT, () => {
+    app.listen(process.env.PORT, process.env.HOST, () => {
       logger.info(
         `Servidor rodando em http://${process.env.HOST}:${process.env.PORT}`
       );
