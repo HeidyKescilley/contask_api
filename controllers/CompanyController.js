@@ -11,6 +11,8 @@ const {
   terminatedTemplate,
   suspendedTemplate,
   newCompanyTemplate,
+  suspendedEmailClient,
+  suspendedEmailInternal,
 } = require("../emails/templates");
 const ContactMode = require("../models/ContactMode");
 const Automation = require("../models/Automation");
@@ -389,6 +391,11 @@ module.exports = class CompanyController {
     } else {
       statusDate = req.body.statusDate;
     }
+    // Para SUSPENSA, captura o valor do débito
+    let debitValue = null;
+    if (newStatus === "SUSPENSA") {
+      debitValue = req.body.debitValue;
+    }
 
     try {
       const company = await Company.findByPk(companyId);
@@ -413,12 +420,13 @@ module.exports = class CompanyController {
         `Status da empresa alterado: ${company.name} para ${newStatus} por ${req.user.email}`
       );
 
-      // Para DISTRATO, passamos também serviceEndDate para o email
+      // Para DISTRATO, passa serviceEndDate; para SUSPENSA, passa debitValue
       await CompanyController.sendStatusChangeEmails(
         company,
         newStatus,
         statusDate,
-        req.body.serviceEndDate
+        req.body.serviceEndDate || null,
+        debitValue
       );
 
       invalidateCache([
@@ -443,7 +451,7 @@ module.exports = class CompanyController {
     }
   }
 
-  static async sendStatusChangeEmails(company, newStatus, date, serviceEndDate) {
+  static async sendStatusChangeEmails(company, newStatus, date, serviceEndDate, debitValue) {
     try {
       const companyName = company.name;
       let emailContent;
@@ -456,6 +464,14 @@ module.exports = class CompanyController {
           newStatus,
           formatedDate,
         });
+        const users = await User.findAll({ attributes: ["email"] });
+        const userEmails = users.map((user) => user.email);
+        await transporter.sendMail({
+          from: '"Contask" <naoresponda@contelb.com.br>',
+          to: userEmails.join(","),
+          subject: emailSubject,
+          html: emailContent,
+        });
       } else if (newStatus === "BAIXADA") {
         const formatedDate = formatDate(date);
         emailContent = closedTemplate({
@@ -463,8 +479,15 @@ module.exports = class CompanyController {
           newStatus,
           formatedDate,
         });
+        const users = await User.findAll({ attributes: ["email"] });
+        const userEmails = users.map((user) => user.email);
+        await transporter.sendMail({
+          from: '"Contask" <naoresponda@contelb.com.br>',
+          to: userEmails.join(","),
+          subject: emailSubject,
+          html: emailContent,
+        });
       } else if (newStatus === "DISTRATO") {
-        // Para DISTRATO, utiliza contractEndDate (date) e serviceEndDate
         const formattedContractEndDate = formatDate(date);
         const formattedServiceEndDate = formatDate(serviceEndDate);
         emailContent = terminatedTemplate({
@@ -472,51 +495,82 @@ module.exports = class CompanyController {
           contractEndDate: formattedContractEndDate,
           serviceEndDate: formattedServiceEndDate,
         });
-      } else if (newStatus === "SUSPENSA") {
-        const formatedDate = formatDate(date);
-        emailContent = suspendedTemplate({
-          companyName,
-          newStatus,
-          formatedDate,
-        });
-      } else {
-        emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
-      }
-
-      const users = await User.findAll({ attributes: ["email"] });
-      const userEmails = users.map((user) => user.email);
-
-      await transporter.sendMail({
-        from: '"Contask" <naoresponda@contelb.com.br>',
-        to: userEmails.join(","),
-        subject: emailSubject,
-        html: emailContent,
-      });
-
-      logger.info(
-        `Emails de alteração de status enviados para ${userEmails.length} usuários.`
-      );
-
-      if (newStatus === "SUSPENSA" && company.email) {
-        const companyEmails = company.email
-          .split(",")
-          .map((email) => email.trim());
-
+        const users = await User.findAll({ attributes: ["email"] });
+        const userEmails = users.map((user) => user.email);
         await transporter.sendMail({
           from: '"Contask" <naoresponda@contelb.com.br>',
-          to: companyEmails.join(","),
+          to: userEmails.join(","),
           subject: emailSubject,
           html: emailContent,
         });
-
-        logger.info(
-          `Emails de suspensão enviados para ${companyEmails.length} emails da empresa ${companyName}.`
-        );
+      } else if (newStatus === "SUSPENSA") {
+        const formattedDate = formatDate(date);
+        // Enviar email interno para os usuários
+        const internalContent = suspendedEmailInternal({
+          companyName,
+          suspensionDate: formattedDate,
+        });
+        const users = await User.findAll({ attributes: ["email"] });
+        const userEmails = users
+          .map((user) => user.email)
+          .filter((email) => email);
+        logger.info(`Internal email recipients: ${userEmails.join(",")}`);
+        if (userEmails.length > 0) {
+          await transporter.sendMail({
+            from: '"Contask" <naoresponda@contelb.com.br>',
+            to: userEmails.join(","),
+            subject: emailSubject,
+            html: internalContent,
+          });
+          logger.info(
+            `Email interno de suspensão enviado para ${userEmails.length} destinatários.`
+          );
+        } else {
+          logger.warn("Nenhum email interno encontrado para envio de suspensão.");
+        }
+        // Enviar email para o cliente, se houver e-mails cadastrados
+        if (company.email && company.email.trim() !== "") {
+          const companyEmails = company.email
+            .split(",")
+            .map((email) => email.trim())
+            .filter((email) => email);
+          logger.info(`Client email recipients: ${companyEmails.join(",")}`);
+          if (companyEmails.length > 0) {
+            const clientContent = suspendedEmailClient({
+              companyName,
+              debitValue,
+              suspensionDate: formattedDate,
+            });
+            await transporter.sendMail({
+              from: '"Contask" <naoresponda@contelb.com.br>',
+              to: companyEmails.join(","),
+              subject: emailSubject,
+              html: clientContent,
+            });
+            logger.info(
+              `Email de suspensão para o cliente enviado para: ${companyEmails.join(
+                ","
+              )}.`
+            );
+          } else {
+            logger.warn("Nenhum email de cliente válido encontrado.");
+          }
+        } else {
+          logger.warn("Email da empresa não informado para envio de notificação ao cliente.");
+        }
+      } else {
+        emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
+        const users = await User.findAll({ attributes: ["email"] });
+        const userEmails = users.map((user) => user.email);
+        await transporter.sendMail({
+          from: '"Contask" <naoresponda@contelb.com.br>',
+          to: userEmails.join(","),
+          subject: emailSubject,
+          html: emailContent,
+        });
       }
     } catch (error) {
-      logger.error(
-        `Erro ao enviar emails de alteração de status: ${error.message}`
-      );
+      logger.error(`Erro ao enviar emails de alteração de status: ${error.message}`);
     }
   }
 

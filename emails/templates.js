@@ -1,4 +1,4 @@
-// /emails/templates.js
+// D:\ContHub\contask_api\emails\templates.js
 const fs = require("fs");
 const path = require("path");
 const Handlebars = require("handlebars");
@@ -20,10 +20,20 @@ const terminatedTemplate = loadTemplate("terminatedEmail");
 const suspendedTemplate = loadTemplate("suspendedEmail");
 const newCompanyTemplate = loadTemplate("newCompany");
 
+// Novos templates para status SUSPENSA
+const suspendedEmailClient = loadTemplate("suspendedEmailClient");
+const suspendedEmailInternal = loadTemplate("suspendedEmailInternal");
+
+// Template para enviar a lista de empresas suspensas
+const suspendedCompaniesListTemplate = loadTemplate("suspendedCompaniesList");
+
 module.exports = {
   activeTemplate,
   closedTemplate,
   terminatedTemplate,
   suspendedTemplate,
   newCompanyTemplate,
+  suspendedEmailClient,
+  suspendedEmailInternal,
+  suspendedCompaniesListTemplate,
 };

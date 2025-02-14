@@ -1,6 +1,10 @@
-// /controllers/AdminController.js
+// D:\ContHub\contask_api\controllers\AdminController.js
 const User = require("../models/User");
-const logger = require("../logger/logger"); // Importa o logger do Winston
+const Company = require("../models/Company"); // Importa o modelo Company
+const transporter = require("../services/emailService");
+const { suspendedCompaniesListTemplate } = require("../emails/templates");
+const formatDate = require("../helpers/format-date");
+const logger = require("../logger/logger");
 
 module.exports = {
   getAllUsers: async (req, res) => {
@@ -75,6 +79,52 @@ module.exports = {
     } catch (error) {
       logger.error(`Erro ao deletar usuário: ${error.message}`);
       res.status(500).json({ message: "Erro ao deletar usuário." });
+    }
+  },
+
+  sendSuspendedCompaniesEmailManual: async (req, res) => {
+    try {
+      // Buscar empresas com status "SUSPENSA"
+      const suspendedCompanies = await Company.findAll({
+        where: { status: "SUSPENSA" },
+        attributes: ["name", "statusUpdatedAt"],
+      });
+
+      const companiesData = suspendedCompanies.map((company) => ({
+        name: company.name,
+        statusUpdatedAt: formatDate(company.statusUpdatedAt),
+      }));
+
+      // Obter a data atual formatada no padrão brasileiro
+      const currentDate = new Date().toLocaleDateString("pt-BR");
+
+      const emailContent = suspendedCompaniesListTemplate({
+        companies: companiesData,
+        currentDate,
+      });
+
+      // Buscar todos os emails dos usuários cadastrados
+      const users = await User.findAll({ attributes: ["email"] });
+      const userEmails = users
+        .map((user) => user.email)
+        .filter((email) => email);
+
+      if (userEmails.length === 0) {
+        return res.status(400).json({ message: "Nenhum usuário encontrado para envio." });
+      }
+
+      await transporter.sendMail({
+        from: '"Contask" <naoresponda@contelb.com.br>',
+        to: userEmails.join(","),
+        subject: "Lista de Empresas Suspensas - " + currentDate,
+        html: emailContent,
+      });
+
+      logger.info(`Email manual de empresas suspensas enviado para ${userEmails.length} usuários.`);
+      return res.status(200).json({ message: "Email enviado com sucesso." });
+    } catch (error) {
+      logger.error(`Erro ao enviar email manual de empresas suspensas: ${error.message}`);
+      return res.status(500).json({ message: "Erro ao enviar email." });
     }
   },
 };

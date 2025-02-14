@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lista de Empresas Suspensas</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+      }
+      th {
+        background-color: #f2f2f2;
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Data de Envio: {{currentDate}}</p>
+    <h2>Lista de Empresas Suspensas</h2>
+    <p>Abaixo segue a lista de todas as empresas suspensas atualmente:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Empresa</th>
+          <th>Data de Suspensão</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each companies}}
+          <tr>
+            <td>{{this.name}}</td>
+            <td>{{this.statusUpdatedAt}}</td>
+          </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </body>
+</html>
