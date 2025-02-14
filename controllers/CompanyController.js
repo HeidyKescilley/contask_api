@@ -1,4 +1,4 @@
-// /controllers/CompanyController.js
+// D:\ContHub\contask_api\controllers\CompanyController.js
 const { Op } = require("sequelize");
 const cleanCNPJ = require("./../helpers/clean-cnpj");
 const Company = require("../models/Company");
@@ -40,7 +40,6 @@ function invalidateCache(keys) {
   keys.forEach((key) => cache.del(key));
 }
 
-// Para recarregar dados, lembre-se de converter para JSON também
 async function reloadAllCompanies() {
   const fetchAllCompanies = async () => {
     const companies = await Company.findAll({
@@ -382,7 +381,14 @@ module.exports = class CompanyController {
 
   static async changeStatus(req, res) {
     const companyId = req.params.id;
-    const { newStatus, statusDate } = req.body;
+    const { newStatus } = req.body;
+    let statusDate;
+    // Para DISTRATO, utiliza contractEndDate como data de encerramento do contrato
+    if (newStatus === "DISTRATO") {
+      statusDate = req.body.contractEndDate;
+    } else {
+      statusDate = req.body.statusDate;
+    }
 
     try {
       const company = await Company.findByPk(companyId);
@@ -407,10 +413,12 @@ module.exports = class CompanyController {
         `Status da empresa alterado: ${company.name} para ${newStatus} por ${req.user.email}`
       );
 
+      // Para DISTRATO, passamos também serviceEndDate para o email
       await CompanyController.sendStatusChangeEmails(
         company,
         newStatus,
-        statusDate
+        statusDate,
+        req.body.serviceEndDate
       );
 
       invalidateCache([
@@ -435,44 +443,44 @@ module.exports = class CompanyController {
     }
   }
 
-  static async sendStatusChangeEmails(company, newStatus, date) {
+  static async sendStatusChangeEmails(company, newStatus, date, serviceEndDate) {
     try {
-      const formatedDate = formatDate(date);
       const companyName = company.name;
       let emailContent;
       let emailSubject = `${companyName} - Atualização de Status`;
 
-      switch (newStatus) {
-        case "ATIVA":
-          emailContent = activeTemplate({
-            companyName,
-            newStatus,
-            formatedDate,
-          });
-          break;
-        case "BAIXADA":
-          emailContent = closedTemplate({
-            companyName,
-            newStatus,
-            formatedDate,
-          });
-          break;
-        case "DISTRATO":
-          emailContent = terminatedTemplate({
-            companyName,
-            newStatus,
-            formatedDate,
-          });
-          break;
-        case "SUSPENSA":
-          emailContent = suspendedTemplate({
-            companyName,
-            newStatus,
-            formatedDate,
-          });
-          break;
-        default:
-          emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
+      if (newStatus === "ATIVA") {
+        const formatedDate = formatDate(date);
+        emailContent = activeTemplate({
+          companyName,
+          newStatus,
+          formatedDate,
+        });
+      } else if (newStatus === "BAIXADA") {
+        const formatedDate = formatDate(date);
+        emailContent = closedTemplate({
+          companyName,
+          newStatus,
+          formatedDate,
+        });
+      } else if (newStatus === "DISTRATO") {
+        // Para DISTRATO, utiliza contractEndDate (date) e serviceEndDate
+        const formattedContractEndDate = formatDate(date);
+        const formattedServiceEndDate = formatDate(serviceEndDate);
+        emailContent = terminatedTemplate({
+          companyName,
+          contractEndDate: formattedContractEndDate,
+          serviceEndDate: formattedServiceEndDate,
+        });
+      } else if (newStatus === "SUSPENSA") {
+        const formatedDate = formatDate(date);
+        emailContent = suspendedTemplate({
+          companyName,
+          newStatus,
+          formatedDate,
+        });
+      } else {
+        emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
       }
 
       const users = await User.findAll({ attributes: ["email"] });
