@@ -6,6 +6,7 @@ const { suspendedCompaniesListTemplate } = require("../emails/templates");
 const formatDate = require("../helpers/format-date");
 const logger = require("../logger/logger");
 const { cacheUtils } = require("./CompanyController");
+const bcrypt = require("bcrypt");
 
 module.exports = {
   getAllUsers: async (req, res) => {
@@ -209,6 +210,75 @@ module.exports = {
         `Erro ao arquivar manualmente a empresa (ID: ${companyId}): ${error.message}`, { stack: error.stack }
       );
       return res.status(500).json({ message: "Erro ao arquivar a empresa." });
+    }
+  },
+  changeUserPasswordByAdmin: async (req, res) => {
+    const userId = req.params.id;
+    const { newPassword } = req.body;
+    const adminUser = req.user; // Usuário admin que está realizando a ação
+  
+    if (!newPassword || newPassword.trim() === "") {
+      logger.warn(
+        `Admin (${adminUser.email}) tentou alterar senha do usuário ID ${userId} sem fornecer uma nova senha.`
+      );
+      return res.status(400).json({ message: "A nova senha é obrigatória." });
+    }
+  
+    // Opcional: Adicionar validação de complexidade da senha aqui, se desejado.
+    // Ex: if (newPassword.length < 8) return res.status(400).json({ message: "Senha muito curta."})
+  
+    try {
+      const userToChange = await User.findByPk(userId);
+  
+      if (!userToChange) {
+        logger.warn(
+          `Admin (${adminUser.email}) falhou ao tentar alterar senha: Usuário não encontrado (ID: ${userId})`
+        );
+        return res.status(404).json({ message: "Usuário não encontrado." });
+      }
+  
+      // Gerar hash da nova senha
+      const bcrypt = require("bcrypt"); // Certifique-se que bcrypt está importado no topo do arquivo se já não estiver
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(newPassword, salt);
+  
+      userToChange.password = passwordHash;
+      await userToChange.save();
+  
+      logger.info(
+        `Senha do usuário ${userToChange.email} (ID: <span class="math-inline">\{userId\}\) alterada com sucesso por Admin \(</span>{adminUser.email}).`
+      );
+  
+      // Enviar email para o usuário com a nova senha
+      try {
+        const { adminChangedPasswordEmailTemplate } = require("../emails/templates"); // Certifique-se que está importado no topo do arquivo
+        const emailContent = adminChangedPasswordEmailTemplate({
+          userName: userToChange.name,
+          newPassword: newPassword, // Enviando a senha em texto plano como solicitado
+        });
+  
+        await transporter.sendMail({
+          from: '"Contask" <naoresponda@contelb.com.br>',
+          to: userToChange.email,
+          subject: "Sua senha no Contask foi alterada",
+          html: emailContent,
+        });
+        logger.info(`Email de notificação de alteração de senha enviado para ${userToChange.email}.`);
+      } catch (emailError) {
+        logger.error(
+          `Erro ao enviar email de notificação de alteração de senha para ${userToChange.email}: ${emailError.message}`
+        );
+        // Não retornar erro para o admin aqui, pois a senha JÁ FOI alterada.
+        // Apenas logar o erro do email.
+      }
+  
+      res.status(200).json({ message: "Senha do usuário atualizada com sucesso." });
+    } catch (error) {
+      logger.error(
+        `Erro ao alterar senha do usuário (ID: <span class="math-inline">\{userId\}\) por Admin \(</span>{adminUser.email}): ${error.message}`,
+        { stack: error.stack }
+      );
+      res.status(500).json({ message: "Erro ao atualizar senha do usuário." });
     }
   },
 };

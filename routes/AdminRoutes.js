@@ -29,4 +29,11 @@ router.patch(
   AdminController.archiveCompanyManually
 );
 
+router.patch(
+  "/user/:id/change-password",
+  verifyAdmin,
+  activityLogger,
+  AdminController.changeUserPasswordByAdmin
+);
+
 module.exports = router;
