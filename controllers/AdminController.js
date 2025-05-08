@@ -5,6 +5,7 @@ const transporter = require("../services/emailService");
 const { suspendedCompaniesListTemplate } = require("../emails/templates");
 const formatDate = require("../helpers/format-date");
 const logger = require("../logger/logger");
+const { cacheUtils } = require("./CompanyController");
 
 module.exports = {
   getAllUsers: async (req, res) => {
@@ -86,7 +87,7 @@ module.exports = {
     try {
       // Buscar empresas com status "SUSPENSA"
       const suspendedCompanies = await Company.findAll({
-        where: { status: "SUSPENSA" },
+        where: { status: "SUSPENSA", isArchived: false },
         attributes: ["name", "statusUpdatedAt"],
       });
 
@@ -125,6 +126,89 @@ module.exports = {
     } catch (error) {
       logger.error(`Erro ao enviar email manual de empresas suspensas: ${error.message}`);
       return res.status(500).json({ message: "Erro ao enviar email." });
+    }
+  },
+
+  archiveCompanyManually: async (req, res) => {
+    const companyId = req.params.id;
+    try {
+      logger.info(
+        `Admin (${req.user.email}) solicitou o arquivamento manual da empresa ID: ${companyId}.`
+      );
+
+      const company = await Company.findByPk(companyId);
+
+      if (!company) {
+        logger.warn(
+          `Arquivamento manual falhou: Empresa não encontrada (ID: ${companyId})`
+        );
+        return res.status(404).json({ message: "Empresa não encontrada." });
+      }
+
+      if (company.isArchived) {
+        logger.info(
+          `Empresa (ID: ${companyId}) já está arquivada. Nenhuma ação tomada.`
+        );
+        return res
+          .status(200)
+          .json({ message: "Empresa já se encontra arquivada." });
+      }
+
+      // Opcional: Restringir o arquivamento manual apenas para status 'BAIXADA' ou 'DISTRATO'
+      // if (!['BAIXADA', 'DISTRATO'].includes(company.status)) {
+      //   logger.warn(`Arquivamento manual falhou: Status da empresa (ID: <span class="math-inline">\{companyId\}\) é '</span>{company.status}', não BAIXADA ou DISTRATO.`);
+      //   return res.status(400).json({ message: "A empresa precisa estar com status BAIXADA ou DISTRATO para ser arquivada manualmente desta forma." });
+      // }
+
+      company.isArchived = true;
+      await company.save();
+
+      logger.info(
+        `Empresa ${company.name} (ID: <span class="math-inline">\{companyId\}\) arquivada manualmente por Admin \(</span>{req.user.email}).`
+      );
+
+      // INVALIDAR E RECARREGAR CACHES RELEVANTES
+      logger.info(
+        `Invalidando caches após arquivamento manual da empresa ID: ${companyId} por Admin (${req.user.email})`
+      );
+      const globalCacheKeys = [
+        "companies_all",
+        "recent_companies",
+        "recent_active_companies",
+        "recent_status_changes",
+      ];
+      cacheUtils.invalidateCache(globalCacheKeys);
+      logger.info(`Caches globais invalidados: ${globalCacheKeys.join(', ')}`);
+      
+      // Invalida todos os caches de "my_companies_*"
+      cacheUtils.invalidateCachesByPrefix("my_companies_");
+
+      // Recarrega caches globais
+      await cacheUtils.reloadAllCompanies();
+      await cacheUtils.reloadRecentCompanies();
+      await cacheUtils.reloadRecentActiveCompanies();
+      await cacheUtils.reloadRecentStatusChanges();
+      
+      // Recarrega o cache "my_companies" do admin que realizou a ação, se ele tiver um ID de usuário
+      if (req.user && req.user.id) {
+        await cacheUtils.reloadMyCompanies(req.user.id);
+        logger.info(`Cache 'my_companies_${req.user.id}' recarregado para o admin.`);
+      }
+      // Os caches "my_companies_USERID" de outros usuários serão recarregados sob demanda (quando eles acessarem a página),
+      // pois seus caches específicos para essa chave foram deletados.
+
+      logger.info(
+        `Caches principais recarregados e caches 'my_companies_*' invalidados após arquivamento manual da empresa ID: ${companyId}`
+      );
+
+      return res
+        .status(200)
+        .json({ message: "Empresa arquivada com sucesso." });
+    } catch (error) {
+      logger.error(
+        `Erro ao arquivar manualmente a empresa (ID: ${companyId}): ${error.message}`, { stack: error.stack }
+      );
+      return res.status(500).json({ message: "Erro ao arquivar a empresa." });
     }
   },
 };

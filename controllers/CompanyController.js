@@ -45,6 +45,7 @@ function invalidateCache(keys) {
 async function reloadAllCompanies() {
   const fetchAllCompanies = async () => {
     const companies = await Company.findAll({
+      where: { isArchived: false }, // ADICIONAR ESTA LINHA
       include: [
         { model: User, as: "respFiscal", attributes: ["id", "name"] },
         { model: User, as: "respDp", attributes: ["id", "name"] },
@@ -62,6 +63,7 @@ async function reloadAllCompanies() {
 async function reloadRecentCompanies() {
   const fetchRecent = async () => {
     const companies = await Company.findAll({
+      where: { isArchived: false },
       include: [
         { model: User, as: "respFiscal", attributes: ["id", "name"] },
         { model: User, as: "respDp", attributes: ["id", "name"] },
@@ -83,6 +85,7 @@ async function reloadRecentActiveCompanies() {
     const companies = await Company.findAll({
       where: {
         status: "ATIVA",
+        isArchived: false
       },
       order: [["statusUpdatedAt", "DESC"]],
       limit: 10,
@@ -125,6 +128,8 @@ async function reloadMyCompanies(userId) {
   } else if (user.department === "Contábil") {
     whereClause.respContabilId = user.id;
   }
+
+  whereClause.isArchived = false;
 
   const fetchMyCompanies = async () => {
     const companies = await Company.findAll({
@@ -357,7 +362,7 @@ module.exports = class CompanyController {
 
     try {
       const company = await Company.findOne({
-        where: { id },
+        where: { id, isArchived:false },
         include: [
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
           { model: User, as: "respDp", attributes: ["id", "name"] },
@@ -387,7 +392,7 @@ module.exports = class CompanyController {
     let statusDate;
     // Para DISTRATO, utiliza contractEndDate como data de encerramento do contrato
     if (newStatus === "DISTRATO") {
-      statusDate = req.body.contractEndDate;
+      statusDate = req.body.statusDate; // Corrigido para usar a data enviada pelo frontend
     } else {
       statusDate = req.body.statusDate;
     }
@@ -404,6 +409,10 @@ module.exports = class CompanyController {
           `Alteração de status falhou: Empresa não encontrada (ID: ${companyId})`
         );
         return res.status(404).json({ message: "Empresa não encontrada." });
+      }
+
+      if (newStatus === "ATIVA") {
+        company.isArchived = false;
       }
 
       company.status = newStatus;
@@ -709,6 +718,8 @@ module.exports = class CompanyController {
         return res.status(200).json([]);
       }
 
+      whereClause.isArchived = false;
+
       const fetchMyCompanies = async () => {
         const companies = await Company.findAll({
           where: whereClause,
@@ -739,4 +750,26 @@ module.exports = class CompanyController {
       return res.status(500).json({ message: error.message });
     }
   }
+};
+
+// Função para invalidar caches por prefixo, útil para "my_companies_USERID"
+function invalidateCachesByPrefix(prefix) {
+  const keysToDelete = cache.keys().filter(key => key.startsWith(prefix));
+  if (keysToDelete.length > 0) {
+    cache.del(keysToDelete); // node-cache del() pode aceitar um array de chaves
+    logger.info(`Caches invalidados com prefixo '${prefix}': ${keysToDelete.join(', ')}`);
+  } else {
+    logger.info(`Nenhum cache encontrado com prefixo '${prefix}' para invalidar.`);
+  }
+}
+
+module.exports.cacheUtils = {
+  cacheInstance: cache, // Exporta a instância do cache para acesso direto se necessário (ex: keys())
+  invalidateCache,
+  invalidateCachesByPrefix, // Nova função exportada
+  reloadAllCompanies,
+  reloadRecentCompanies,
+  reloadRecentActiveCompanies,
+  reloadRecentStatusChanges,
+  reloadMyCompanies,
 };

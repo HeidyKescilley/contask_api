@@ -101,6 +101,11 @@ const Company = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    isArchived: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    }
   },
   {
     timestamps: true,

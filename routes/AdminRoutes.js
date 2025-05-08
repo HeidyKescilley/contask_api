@@ -21,4 +21,12 @@ router.post(
   AdminController.sendSuspendedCompaniesEmailManual
 );
 
+// ROTA PARA ARQUIVAR EMPRESA MANUALMENTE (ADMIN)
+router.patch(
+  "/company/:id/archive",
+  verifyAdmin,
+  activityLogger,
+  AdminController.archiveCompanyManually
+);
+
 module.exports = router;

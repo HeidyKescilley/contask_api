@@ -11,7 +11,8 @@ const sendSuspendedCompaniesEmail = async () => {
   try {
     // Buscar empresas com status "SUSPENSA"
     const suspendedCompanies = await Company.findAll({
-      where: { status: "SUSPENSA" },
+      where: { status: "SUSPENSA",
+        isArchived: false },
       attributes: ["name", "statusUpdatedAt"],
     });
 
