@@ -30,8 +30,7 @@ const cache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 async function getCompaniesFromCache(key, fetchFunction) {
   let data = cache.get(key);
   if (!data) {
-    const result = await fetchFunction();
-    // Converte para JSON puro
+    const result = await fetchFunction(); // Converte para JSON puro
     data = JSON.parse(JSON.stringify(result));
     cache.set(key, data);
   }
@@ -45,12 +44,43 @@ function invalidateCache(keys) {
 async function reloadAllCompanies() {
   const fetchAllCompanies = async () => {
     const companies = await Company.findAll({
-      where: { isArchived: false }, // ADICIONAR ESTA LINHA
+      where: { isArchived: false },
       include: [
         { model: User, as: "respFiscal", attributes: ["id", "name"] },
         { model: User, as: "respDp", attributes: ["id", "name"] },
         { model: User, as: "respContabil", attributes: ["id", "name"] },
         { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
+      ],
+      // Adicionar todos os atributos aqui para garantir que sejam incluídos na recarga do cache
+      attributes: [
+        "id",
+        "num",
+        "name",
+        "cnpj",
+        "ie",
+        "rule",
+        "classi",
+        "contractInit",
+        "contact",
+        "email",
+        "phone",
+        "status",
+        "statusUpdatedAt",
+        "respFiscalId",
+        "respDpId",
+        "respContabilId",
+        "contactModeId",
+        "important_info",
+        "openedByUs",
+        "uf",
+        "obs",
+        "isArchived",
+        "branchNumber",
+        "sentToClient",
+        "declarationsCompleted",
+        "bonusValue",
+        "employeesCount",
+        "isZeroed",
       ],
     });
     return JSON.parse(JSON.stringify(companies));
@@ -71,7 +101,7 @@ async function reloadRecentCompanies() {
       ],
       order: [["createdAt", "DESC"]],
       limit: 10,
-      attributes: ["id", "name", "contractInit"],
+      attributes: ["id", "name", "contractInit"], // Manter atributos específicos para este caso
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -85,11 +115,11 @@ async function reloadRecentActiveCompanies() {
     const companies = await Company.findAll({
       where: {
         status: "ATIVA",
-        isArchived: false
+        isArchived: false,
       },
       order: [["statusUpdatedAt", "DESC"]],
       limit: 10,
-      attributes: ["id", "name", "status", "statusUpdatedAt"],
+      attributes: ["id", "name", "status", "statusUpdatedAt"], // Manter atributos específicos para este caso
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -108,7 +138,7 @@ async function reloadRecentStatusChanges() {
       },
       order: [["statusUpdatedAt", "DESC"]],
       limit: 10,
-      attributes: ["id", "name", "status", "statusUpdatedAt"],
+      attributes: ["id", "name", "status", "statusUpdatedAt"], // Manter atributos específicos para este caso
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -140,6 +170,37 @@ async function reloadMyCompanies(userId) {
         { model: User, as: "respContabil", attributes: ["id", "name"] },
         { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
       ],
+      // Adicionar todos os atributos aqui para garantir que sejam incluídos na recarga do cache
+      attributes: [
+        "id",
+        "num",
+        "name",
+        "cnpj",
+        "ie",
+        "rule",
+        "classi",
+        "contractInit",
+        "contact",
+        "email",
+        "phone",
+        "status",
+        "statusUpdatedAt",
+        "respFiscalId",
+        "respDpId",
+        "respContabilId",
+        "contactModeId",
+        "important_info",
+        "openedByUs",
+        "uf",
+        "obs",
+        "isArchived",
+        "branchNumber",
+        "sentToClient",
+        "declarationsCompleted",
+        "bonusValue",
+        "employeesCount",
+        "isZeroed",
+      ],
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -167,6 +228,7 @@ module.exports = class CompanyController {
         openedByUs,
         important_info,
         obs,
+        branchNumber, // Novo campo
       } = req.body;
 
       logger.info(
@@ -207,6 +269,12 @@ module.exports = class CompanyController {
         status: "ATIVA",
         statusUpdatedAt: new Date(),
         obs,
+        branchNumber, // Salvar novo campo
+        sentToClient: false, // Valor inicial
+        declarationsCompleted: false, // Valor inicial
+        bonusValue: null, // Valor inicial
+        employeesCount: null, // Valor inicial
+        isZeroed: false, // Valor inicial
       });
 
       await StatusHistory.create({
@@ -219,16 +287,14 @@ module.exports = class CompanyController {
         `Empresa criada com sucesso: ${name} (ID: ${newCompany.id}) por ${req.user.email}`
       );
 
-      await CompanyController.sendCompanyRegisteredEmails(newCompany);
+      await CompanyController.sendCompanyRegisteredEmails(newCompany); // Invalida caches
 
-      // Invalida caches
       invalidateCache([
         "companies_all",
         "recent_companies",
         "recent_active_companies",
         "recent_status_changes",
-      ]);
-      // Recarrega cache
+      ]); // Recarrega cache
       await reloadAllCompanies();
       await reloadRecentCompanies();
       await reloadRecentActiveCompanies();
@@ -276,7 +342,7 @@ module.exports = class CompanyController {
 
   static async editCompany(req, res) {
     const { id } = req.params;
-    const companyData = req.body;
+    const companyData = req.body; // companyData pode conter 'branchNumber' agora
 
     try {
       const company = await Company.findByPk(id);
@@ -291,7 +357,7 @@ module.exports = class CompanyController {
         `Empresa (${company.name}, ID: ${id}) está sendo editada por ${req.user.email}`
       );
 
-      await company.update(companyData);
+      await company.update(companyData); // Sequelize atualiza os campos presentes em companyData
 
       if (companyData.automationIds) {
         await company.setAutomations(companyData.automationIds);
@@ -330,6 +396,7 @@ module.exports = class CompanyController {
 
       const fetchAllCompanies = async () => {
         const companies = await Company.findAll({
+          where: { isArchived: false }, // Adicionado filtro de isArchived aqui
           include: [
             { model: User, as: "respFiscal", attributes: ["id", "name"] },
             { model: User, as: "respDp", attributes: ["id", "name"] },
@@ -339,6 +406,36 @@ module.exports = class CompanyController {
               as: "contactMode",
               attributes: ["id", "name"],
             },
+          ],
+          attributes: [
+            "id",
+            "num",
+            "name",
+            "cnpj",
+            "ie",
+            "rule",
+            "classi",
+            "contractInit",
+            "contact",
+            "email",
+            "phone",
+            "status",
+            "statusUpdatedAt",
+            "respFiscalId",
+            "respDpId",
+            "respContabilId",
+            "contactModeId",
+            "important_info",
+            "openedByUs",
+            "uf",
+            "obs",
+            "isArchived",
+            "branchNumber",
+            "sentToClient",
+            "declarationsCompleted",
+            "bonusValue",
+            "employeesCount",
+            "isZeroed", // Incluindo novos campos
           ],
         });
         return JSON.parse(JSON.stringify(companies));
@@ -362,13 +459,43 @@ module.exports = class CompanyController {
 
     try {
       const company = await Company.findOne({
-        where: { id, isArchived:false },
+        where: { id, isArchived: false },
         include: [
           { model: User, as: "respFiscal", attributes: ["id", "name"] },
           { model: User, as: "respDp", attributes: ["id", "name"] },
           { model: User, as: "respContabil", attributes: ["id", "name"] },
           { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
           { model: Automation, as: "automations", attributes: ["id", "name"] },
+        ],
+        attributes: [
+          "id",
+          "num",
+          "name",
+          "cnpj",
+          "ie",
+          "rule",
+          "classi",
+          "contractInit",
+          "contact",
+          "email",
+          "phone",
+          "status",
+          "statusUpdatedAt",
+          "respFiscalId",
+          "respDpId",
+          "respContabilId",
+          "contactModeId",
+          "important_info",
+          "openedByUs",
+          "uf",
+          "obs",
+          "isArchived",
+          "branchNumber",
+          "sentToClient",
+          "declarationsCompleted",
+          "bonusValue",
+          "employeesCount",
+          "isZeroed", // Incluindo novos campos
         ],
       });
 
@@ -389,14 +516,12 @@ module.exports = class CompanyController {
   static async changeStatus(req, res) {
     const companyId = req.params.id;
     const { newStatus } = req.body;
-    let statusDate;
-    // Para DISTRATO, utiliza contractEndDate como data de encerramento do contrato
+    let statusDate; // Para DISTRATO, utiliza contractEndDate como data de encerramento do contrato
     if (newStatus === "DISTRATO") {
       statusDate = req.body.statusDate; // Corrigido para usar a data enviada pelo frontend
     } else {
       statusDate = req.body.statusDate;
-    }
-    // Para SUSPENSA, captura o valor do débito
+    } // Para SUSPENSA, captura o valor do débito
     let debitValue = null;
     if (newStatus === "SUSPENSA") {
       debitValue = req.body.debitValue;
@@ -427,9 +552,8 @@ module.exports = class CompanyController {
 
       logger.info(
         `Status da empresa alterado: ${company.name} para ${newStatus} por ${req.user.email}`
-      );
+      ); // Para DISTRATO, passa serviceEndDate; para SUSPENSA, passa debitValue
 
-      // Para DISTRATO, passa serviceEndDate; para SUSPENSA, passa debitValue
       await CompanyController.sendStatusChangeEmails(
         company,
         newStatus,
@@ -460,7 +584,13 @@ module.exports = class CompanyController {
     }
   }
 
-  static async sendStatusChangeEmails(company, newStatus, date, serviceEndDate, debitValue) {
+  static async sendStatusChangeEmails(
+    company,
+    newStatus,
+    date,
+    serviceEndDate,
+    debitValue
+  ) {
     try {
       const companyName = company.name;
       let emailContent;
@@ -513,8 +643,7 @@ module.exports = class CompanyController {
           html: emailContent,
         });
       } else if (newStatus === "SUSPENSA") {
-        const formattedDate = formatDate(date);
-        // Enviar email interno para os usuários
+        const formattedDate = formatDate(date); // Enviar email interno para os usuários
         const internalContent = suspendedEmailInternal({
           companyName,
           suspensionDate: formattedDate,
@@ -535,9 +664,10 @@ module.exports = class CompanyController {
             `Email interno de suspensão enviado para ${userEmails.length} destinatários.`
           );
         } else {
-          logger.warn("Nenhum email interno encontrado para envio de suspensão.");
-        }
-        // Enviar email para o cliente, se houver e-mails cadastrados
+          logger.warn(
+            "Nenhum email interno encontrado para envio de suspensão."
+          );
+        } // Enviar email para o cliente, se houver e-mails cadastrados
         if (company.email && company.email.trim() !== "") {
           const companyEmails = company.email
             .split(",")
@@ -565,7 +695,9 @@ module.exports = class CompanyController {
             logger.warn("Nenhum email de cliente válido encontrado.");
           }
         } else {
-          logger.warn("Email da empresa não informado para envio de notificação ao cliente.");
+          logger.warn(
+            "Email da empresa não informado para envio de notificação ao cliente."
+          );
         }
       } else {
         emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
@@ -579,7 +711,9 @@ module.exports = class CompanyController {
         });
       }
     } catch (error) {
-      logger.error(`Erro ao enviar emails de alteração de status: ${error.message}`);
+      logger.error(
+        `Erro ao enviar emails de alteração de status: ${error.message}`
+      );
     }
   }
 
@@ -719,6 +853,7 @@ module.exports = class CompanyController {
       }
 
       whereClause.isArchived = false;
+      whereClause.status = "ATIVA"; // Adicionado filtro padrão para "ATIVA" na visualização agente
 
       const fetchMyCompanies = async () => {
         const companies = await Company.findAll({
@@ -732,6 +867,36 @@ module.exports = class CompanyController {
               as: "contactMode",
               attributes: ["id", "name"],
             },
+          ],
+          attributes: [
+            "id",
+            "num",
+            "name",
+            "cnpj",
+            "ie",
+            "rule",
+            "classi",
+            "contractInit",
+            "contact",
+            "email",
+            "phone",
+            "status",
+            "statusUpdatedAt",
+            "respFiscalId",
+            "respDpId",
+            "respContabilId",
+            "contactModeId",
+            "important_info",
+            "openedByUs",
+            "uf",
+            "obs",
+            "isArchived",
+            "branchNumber",
+            "sentToClient",
+            "declarationsCompleted",
+            "bonusValue",
+            "employeesCount",
+            "isZeroed", // Incluindo novos campos
           ],
         });
         return JSON.parse(JSON.stringify(companies));
@@ -750,16 +915,330 @@ module.exports = class CompanyController {
       return res.status(500).json({ message: error.message });
     }
   }
+
+  // NOVO MÉTODO: Atualizar dados específicos da visualização Agente
+  static async updateAgentData(req, res) {
+    const companyId = req.params.id;
+    // O request body pode conter um ou mais desses campos
+    const {
+      sentToClient,
+      declarationsCompleted,
+      bonusValue,
+      employeesCount,
+      isZeroed,
+    } = req.body; // Adicionado isZeroed
+    const user = req.user; // Usuário logado
+
+    try {
+      const company = await Company.findByPk(companyId);
+
+      if (!company) {
+        logger.warn(
+          `Atualização de dados do agente falhou: Empresa não encontrada (ID: ${companyId})`
+        );
+        return res.status(404).json({ message: "Empresa não encontrada." });
+      }
+
+      logger.info(
+        `Usuário (${user.email}) atualizando dados do agente para empresa ID: ${companyId}`
+      );
+
+      // Verificar permissão: Somente o responsável Fiscal ou Pessoal pode editar
+      let hasPermission = false;
+      if (user.department === "Fiscal" && company.respFiscalId === user.id) {
+        hasPermission = true;
+      } else if (
+        user.department === "Pessoal" &&
+        company.respDpId === user.id
+      ) {
+        hasPermission = true;
+      }
+
+      if (!hasPermission && user.role !== "admin") {
+        // Admins também têm permissão
+        logger.warn(
+          `Usuário (${user.email}) sem permissão para atualizar dados do agente da empresa ID: ${companyId}`
+        );
+        return res.status(403).json({
+          message:
+            "Você não tem permissão para atualizar os dados desta empresa.",
+        });
+      }
+
+      // Lógica para o campo 'Zerado'
+      if (typeof isZeroed === "boolean") {
+        company.isZeroed = isZeroed;
+        if (isZeroed) {
+          // Se marcou como "Zerado"
+          company.sentToClient = false; // Desabilita envio
+          if (user.department === "Fiscal") {
+            company.bonusValue = 1; // Atribui 1 para Fiscal
+          } else if (user.department === "Pessoal") {
+            company.employeesCount = 0; // Atribui 0 para Pessoal
+          }
+        }
+        // Se desmarcou isZeroed, os campos sentToClient, bonusValue, employeesCount
+        // permanecerão com seus valores anteriores, ou serão atualizados pelos outros campos do payload.
+      }
+
+      // Atualiza os campos na instância da empresa antes de salvar
+      // Só atualiza sentToClient se isZeroed NÃO ESTIVER marcado no payload ou se for false
+      if (typeof sentToClient === "boolean" && !company.isZeroed) {
+        company.sentToClient = sentToClient;
+      } else if (typeof sentToClient === "boolean" && company.isZeroed) {
+        // Se isZeroed está true, sentToClient deve ser false, então ignora updates para true
+        if (sentToClient === true) {
+          logger.warn(
+            `Tentativa de marcar sentToClient como true para empresa zerada (ID: ${companyId}). Ignorando.`
+          );
+        }
+        company.sentToClient = false; // Garante que é false se Zerado
+      }
+
+      if (typeof declarationsCompleted === "boolean") {
+        company.declarationsCompleted = declarationsCompleted;
+      }
+
+      // Garante que o valor seja salvo como null se for uma string vazia (vinda do input de texto)
+      // Só atualiza bonusValue/employeesCount se isZeroed NÃO ESTIVER marcado no payload ou for false
+      if (!company.isZeroed) {
+        // Se a empresa NÃO está marcada como Zerada
+        if (bonusValue !== undefined) {
+          company.bonusValue =
+            bonusValue === "" ? null : parseInt(bonusValue, 10);
+        }
+        if (employeesCount !== undefined) {
+          company.employeesCount =
+            employeesCount === "" ? null : parseInt(employeesCount, 10);
+        }
+      } else {
+        // Se a empresa está marcada como Zerada, os valores já foram definidos acima
+        if (
+          user.department === "Fiscal" &&
+          bonusValue !== undefined &&
+          bonusValue !== 1
+        ) {
+          logger.warn(
+            `Tentativa de alterar bonusValue para empresa zerada (ID: ${companyId}). Forçando para 1.`
+          );
+          company.bonusValue = 1;
+        } else if (
+          user.department === "Pessoal" &&
+          employeesCount !== undefined &&
+          employeesCount !== 0
+        ) {
+          logger.warn(
+            `Tentativa de alterar employeesCount para empresa zerada (ID: ${companyId}). Forçando para 0.`
+          );
+          company.employeesCount = 0;
+        }
+      }
+
+      // Removida toda a lógica de isZeroed, pois a coluna foi removida
+
+      await company.save(); // Salva todas as alterações de uma vez
+
+      logger.info(
+        `Dados do agente para empresa ${company.name} (ID: ${companyId}) atualizados por ${user.email}. isZeroed: ${company.isZeroed}`
+      );
+
+      // Invalida e recarrega os caches relevantes
+      invalidateCache([
+        "my_companies_" + user.id, // O mais importante é o cache do próprio usuário
+      ]);
+      await reloadMyCompanies(user.id);
+
+      return res
+        .status(200)
+        .json({ message: "Dados do agente atualizados com sucesso.", company });
+    } catch (error) {
+      logger.error(
+        `Erro ao atualizar dados do agente para empresa (ID: ${companyId}): ${error.message}`,
+        { stack: error.stack }
+      );
+      return res
+        .status(500)
+        .json({ message: "Erro ao atualizar dados do agente." });
+    }
+  }
+
+  static async getFiscalDashboardGeneralData(req, res) {
+    try {
+      const user = req.user; // Usuário logado
+      if (user.role !== "admin" && user.department !== "Fiscal") {
+        logger.warn(
+          `Usuário (${user.email}) tentou acessar dashboard fiscal geral sem permissão.`
+        );
+        return res
+          .status(403)
+          .json({
+            message:
+              "Acesso restrito ao departamento Fiscal ou administradores.",
+          });
+      }
+
+      // Lógica para buscar dados gerais
+      const totalCompanies = await Company.count({
+        where: { status: "ATIVA", isArchived: false },
+      });
+
+      const zeroedCompanies = await Company.count({
+        where: { status: "ATIVA", isArchived: false, isZeroed: true },
+      });
+
+      const completedCompanies = await Company.count({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          sentToClient: true,
+          declarationsCompleted: true,
+        },
+      });
+
+      // Lógica para obter dados por usuário do departamento Fiscal
+      const fiscalUsers = await User.findAll({
+        where: { department: "Fiscal" },
+        attributes: ["id", "name"],
+      });
+
+      const usersData = [];
+      for (const fiscalUser of fiscalUsers) {
+        const userCompaniesWhereClause = {
+          status: "ATIVA",
+          isArchived: false,
+          [Op.or]: [
+            { respFiscalId: fiscalUser.id },
+            { respDpId: fiscalUser.id }, // Inclui responsabilidade DP se o usuário Fiscal também for resp DP
+          ],
+        };
+
+        const userTotalCompanies = await Company.count({
+          where: userCompaniesWhereClause,
+        });
+        const userCompletedCompanies = await Company.count({
+          where: {
+            ...userCompaniesWhereClause,
+            sentToClient: true,
+            declarationsCompleted: true,
+          },
+        });
+        const userZeroedCompanies = await Company.count({
+          where: {
+            ...userCompaniesWhereClause,
+            isZeroed: true,
+          },
+        });
+
+        usersData.push({
+          id: fiscalUser.id,
+          name: fiscalUser.name,
+          totalCompaniesAssigned: userTotalCompanies,
+          completedCompanies: userCompletedCompanies,
+          nonCompletedCompanies: userTotalCompanies - userCompletedCompanies,
+          zeroedCompanies: userZeroedCompanies,
+        });
+      }
+
+      res.status(200).json({
+        totalCompanies,
+        zeroedCompanies,
+        completedCompanies,
+        usersData,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados gerais do dashboard fiscal: ${error.message}`,
+        { stack: error.stack }
+      );
+      res
+        .status(500)
+        .json({ message: "Erro ao buscar dados gerais do dashboard fiscal." });
+    }
+  }
+
+  static async getFiscalDashboardMyCompaniesData(req, res) {
+    const targetUserId = req.params.userId;
+    const user = req.user; // Usuário do token
+
+    // Validação de segurança: garantir que o usuário está buscando seus próprios dados ou é um admin
+    if (user.id != targetUserId && user.role !== "admin") {
+      logger.warn(
+        `Usuário (${user.email}) tentou acessar dashboard de 'Minhas Empresas' de outro usuário (${targetUserId}) sem permissão.`
+      );
+      return res
+        .status(403)
+        .json({
+          message:
+            "Você não tem permissão para acessar os dados de outro usuário.",
+        });
+    }
+
+    // Apenas usuários do departamento Fiscal podem ter a visualização 'Minhas Empresas'
+    if (user.department !== "Fiscal" && user.role !== "admin") {
+      logger.warn(
+        `Usuário (${user.email}) tentou acessar dashboard 'Minhas Empresas' mas não é do departamento Fiscal.`
+      );
+      return res
+        .status(403)
+        .json({
+          message:
+            "Esta visualização é restrita a usuários do departamento Fiscal ou administradores.",
+        });
+    }
+
+    try {
+      const whereClause = {
+        status: "ATIVA",
+        isArchived: false,
+        [Op.or]: [
+          { respFiscalId: targetUserId },
+          { respDpId: targetUserId }, // Inclui responsabilidade DP se o usuário Fiscal também for resp DP
+        ],
+      };
+
+      const totalCompanies = await Company.count({ where: whereClause });
+      const zeroedCompanies = await Company.count({
+        where: { ...whereClause, isZeroed: true },
+      });
+      const completedCompanies = await Company.count({
+        where: {
+          ...whereClause,
+          sentToClient: true,
+          declarationsCompleted: true,
+        },
+      });
+
+      res.status(200).json({
+        totalCompanies,
+        zeroedCompanies,
+        completedCompanies,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados de 'Minhas Empresas' para o dashboard fiscal (User ID: ${targetUserId}): ${error.message}`,
+        { stack: error.stack }
+      );
+      res
+        .status(500)
+        .json({
+          message: "Erro ao carregar dados do dashboard de 'Minhas Empresas'.",
+        });
+    }
+  }
 };
 
 // Função para invalidar caches por prefixo, útil para "my_companies_USERID"
 function invalidateCachesByPrefix(prefix) {
-  const keysToDelete = cache.keys().filter(key => key.startsWith(prefix));
+  const keysToDelete = cache.keys().filter((key) => key.startsWith(prefix));
   if (keysToDelete.length > 0) {
     cache.del(keysToDelete); // node-cache del() pode aceitar um array de chaves
-    logger.info(`Caches invalidados com prefixo '${prefix}': ${keysToDelete.join(', ')}`);
+    logger.info(
+      `Caches invalidados com prefixo '${prefix}': ${keysToDelete.join(", ")}`
+    );
   } else {
-    logger.info(`Nenhum cache encontrado com prefixo '${prefix}' para invalidar.`);
+    logger.info(
+      `Nenhum cache encontrado com prefixo '${prefix}' para invalidar.`
+    );
   }
 }
 

@@ -53,6 +53,14 @@ router.get(
   CompanyController.getMyCompanies
 );
 
+// NOVA ROTA: Atualizar dados específicos da visualização Agente
+router.patch(
+  "/update-agent-data/:id",
+  verifyToken,
+  activityLogger,
+  CompanyController.updateAgentData
+);
+
 // Rotas para ContactMode
 router.post(
   "/contact-modes",
@@ -69,5 +77,19 @@ router.get(
 
 // Rota parametrizada deve ser a última
 router.get("/:id", verifyToken, activityLogger, CompanyController.getOne);
+
+router.get(
+  "/fiscal-dashboard/all",
+  verifyToken,
+  activityLogger,
+  CompanyController.getFiscalDashboardGeneralData
+);
+
+router.get(
+  "/fiscal-dashboard/my-companies/:userId",
+  verifyToken,
+  activityLogger,
+  CompanyController.getFiscalDashboardMyCompaniesData
+);
 
 module.exports = router;

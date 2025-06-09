@@ -105,7 +105,36 @@ const Company = db.define(
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
-    }
+    },
+    branchNumber: {
+      type: DataTypes.STRING, // Ou DataTypes.INTEGER se for sempre número
+      allowNull: true,
+    },
+    sentToClient: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    declarationsCompleted: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    bonusValue: {
+      type: DataTypes.INTEGER, // Para nota Fiscal (0-5)
+      allowNull: true,
+    },
+    employeesCount: {
+      type: DataTypes.INTEGER, // Para contagem de funcionários do Pessoal
+      allowNull: true,
+    },
+    // Removido o campo isCompleted
+    isZeroed: {
+      // Novo campo para o checkbox "Zerado"
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
   },
   {
     timestamps: true,
