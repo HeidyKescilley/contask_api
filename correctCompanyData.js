@@ -202,6 +202,12 @@ const Company = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
+    isHeadquarters: {
+      // NOVO CAMPO: isHeadquarters
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
   },
   {
     timestamps: true,
@@ -269,9 +275,8 @@ const correctCompanyData = async () => {
   try {
     // Sincroniza o modelo com o banco de dados (garante que a tabela existe)
     // Usar force: false e alter: true com cautela em produção, mas para um script único pode ser útil para garantir o modelo
-    await sequelize.sync({ force: false, alter: false });
+    await sequelize.sync({ force: false, alter: false }); // Buscar todas as empresas que não estão arquivadas
 
-    // Buscar todas as empresas que não estão arquivadas
     const companies = await Company.findAll({
       where: { isArchived: false },
       attributes: ["id", "name", "cnpj", "uf"], // Selecionar apenas os campos necessários
@@ -348,7 +353,7 @@ const correctCompanyData = async () => {
             message: "Não foi possível obter dados da Brasil API.",
           });
         }
-        await new Promise((resolve) => setTimeout(resolve, 200)); // Pequeno delay para não sobrecarregar a API
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Pequeno delay para não sobrecarregar a API
       } catch (innerError) {
         errorCount++;
         errors.push({
@@ -371,7 +376,7 @@ const correctCompanyData = async () => {
       scriptLogger.info("Detalhes das empresas atualizadas:");
       updatedCompaniesDetails.forEach((detail) => {
         scriptLogger.info(
-          `  ID: ${detail.id}, CNPJ: ${detail.cnpj}, Nome: '${detail.oldName}' -> '${detail.newName}', UF: '${detail.oldUf}' -> '${detail.newUf}'`
+          `  ID: ${detail.id}, CNPJ: ${detail.cnpj}, Nome: '${detail.oldName}' -> '${detail.newName}', UF: '${detail.oldUf}' -> '${detail.newUf}'`
         );
       });
     }
@@ -380,7 +385,7 @@ const correctCompanyData = async () => {
       scriptLogger.warn("Detalhes dos erros:");
       errors.forEach((err) => {
         scriptLogger.error(
-          `  Empresa ID: ${err.companyId}, CNPJ: ${err.cnpj}, Erro: ${err.message}`
+          `  Empresa ID: ${err.companyId}, CNPJ: ${err.cnpj}, Erro: ${err.message}`
         );
       });
     }
@@ -391,6 +396,7 @@ const correctCompanyData = async () => {
       skippedCount,
       updatedCompaniesDetails,
       errors,
+      fatalError: mainError.message,
     };
   } catch (mainError) {
     scriptLogger.error(

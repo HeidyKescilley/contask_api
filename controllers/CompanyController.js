@@ -41,6 +41,40 @@ function invalidateCache(keys) {
   keys.forEach((key) => cache.del(key));
 }
 
+// Lista completa de atributos da Company para uso em findAll/findOne
+// Facilita a manutenção para garantir que todos os campos sejam incluídos.
+const COMPANY_ATTRIBUTES = [
+  "id",
+  "num",
+  "name",
+  "cnpj",
+  "ie",
+  "rule",
+  "classi",
+  "contractInit",
+  "contact",
+  "email",
+  "phone",
+  "status",
+  "statusUpdatedAt",
+  "respFiscalId",
+  "respDpId",
+  "respContabilId",
+  "contactModeId",
+  "important_info",
+  "openedByUs",
+  "uf",
+  "obs",
+  "isArchived",
+  "branchNumber",
+  "sentToClient",
+  "declarationsCompleted",
+  "bonusValue",
+  "employeesCount",
+  "isZeroed",
+  "isHeadquarters", // Adicionado isHeadquarters aqui
+];
+
 async function reloadAllCompanies() {
   const fetchAllCompanies = async () => {
     const companies = await Company.findAll({
@@ -51,37 +85,7 @@ async function reloadAllCompanies() {
         { model: User, as: "respContabil", attributes: ["id", "name"] },
         { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
       ],
-      // Adicionar todos os atributos aqui para garantir que sejam incluídos na recarga do cache
-      attributes: [
-        "id",
-        "num",
-        "name",
-        "cnpj",
-        "ie",
-        "rule",
-        "classi",
-        "contractInit",
-        "contact",
-        "email",
-        "phone",
-        "status",
-        "statusUpdatedAt",
-        "respFiscalId",
-        "respDpId",
-        "respContabilId",
-        "contactModeId",
-        "important_info",
-        "openedByUs",
-        "uf",
-        "obs",
-        "isArchived",
-        "branchNumber",
-        "sentToClient",
-        "declarationsCompleted",
-        "bonusValue",
-        "employeesCount",
-        "isZeroed",
-      ],
+      attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -101,7 +105,7 @@ async function reloadRecentCompanies() {
       ],
       order: [["createdAt", "DESC"]],
       limit: 10,
-      attributes: ["id", "name", "contractInit"], // Manter atributos específicos para este caso
+      attributes: ["id", "name", "contractInit"],
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -119,7 +123,7 @@ async function reloadRecentActiveCompanies() {
       },
       order: [["statusUpdatedAt", "DESC"]],
       limit: 10,
-      attributes: ["id", "name", "status", "statusUpdatedAt"], // Manter atributos específicos para este caso
+      attributes: ["id", "name", "status", "statusUpdatedAt"],
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -138,7 +142,7 @@ async function reloadRecentStatusChanges() {
       },
       order: [["statusUpdatedAt", "DESC"]],
       limit: 10,
-      attributes: ["id", "name", "status", "statusUpdatedAt"], // Manter atributos específicos para este caso
+      attributes: ["id", "name", "status", "statusUpdatedAt"],
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -170,37 +174,7 @@ async function reloadMyCompanies(userId) {
         { model: User, as: "respContabil", attributes: ["id", "name"] },
         { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
       ],
-      // Adicionar todos os atributos aqui para garantir que sejam incluídos na recarga do cache
-      attributes: [
-        "id",
-        "num",
-        "name",
-        "cnpj",
-        "ie",
-        "rule",
-        "classi",
-        "contractInit",
-        "contact",
-        "email",
-        "phone",
-        "status",
-        "statusUpdatedAt",
-        "respFiscalId",
-        "respDpId",
-        "respContabilId",
-        "contactModeId",
-        "important_info",
-        "openedByUs",
-        "uf",
-        "obs",
-        "isArchived",
-        "branchNumber",
-        "sentToClient",
-        "declarationsCompleted",
-        "bonusValue",
-        "employeesCount",
-        "isZeroed",
-      ],
+      attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
     });
     return JSON.parse(JSON.stringify(companies));
   };
@@ -228,7 +202,8 @@ module.exports = class CompanyController {
         openedByUs,
         important_info,
         obs,
-        branchNumber, // Novo campo
+        branchNumber,
+        isHeadquarters, // NOVO: Receber isHeadquarters
       } = req.body;
 
       logger.info(
@@ -269,12 +244,13 @@ module.exports = class CompanyController {
         status: "ATIVA",
         statusUpdatedAt: new Date(),
         obs,
-        branchNumber, // Salvar novo campo
-        sentToClient: false, // Valor inicial
-        declarationsCompleted: false, // Valor inicial
-        bonusValue: null, // Valor inicial
-        employeesCount: null, // Valor inicial
-        isZeroed: false, // Valor inicial
+        branchNumber,
+        sentToClient: false,
+        declarationsCompleted: false,
+        bonusValue: null,
+        employeesCount: null,
+        isZeroed: false,
+        isHeadquarters: isHeadquarters || false, // NOVO: Definir valor inicial
       });
 
       await StatusHistory.create({
@@ -342,7 +318,7 @@ module.exports = class CompanyController {
 
   static async editCompany(req, res) {
     const { id } = req.params;
-    const companyData = req.body; // companyData pode conter 'branchNumber' agora
+    const companyData = req.body; // companyData agora pode incluir isHeadquarters
 
     try {
       const company = await Company.findByPk(id);
@@ -355,9 +331,9 @@ module.exports = class CompanyController {
 
       logger.info(
         `Empresa (${company.name}, ID: ${id}) está sendo editada por ${req.user.email}`
-      );
+      ); // Sequelize atualiza os campos presentes em companyData, incluindo isHeadquarters
 
-      await company.update(companyData); // Sequelize atualiza os campos presentes em companyData
+      await company.update(companyData);
 
       if (companyData.automationIds) {
         await company.setAutomations(companyData.automationIds);
@@ -407,36 +383,7 @@ module.exports = class CompanyController {
               attributes: ["id", "name"],
             },
           ],
-          attributes: [
-            "id",
-            "num",
-            "name",
-            "cnpj",
-            "ie",
-            "rule",
-            "classi",
-            "contractInit",
-            "contact",
-            "email",
-            "phone",
-            "status",
-            "statusUpdatedAt",
-            "respFiscalId",
-            "respDpId",
-            "respContabilId",
-            "contactModeId",
-            "important_info",
-            "openedByUs",
-            "uf",
-            "obs",
-            "isArchived",
-            "branchNumber",
-            "sentToClient",
-            "declarationsCompleted",
-            "bonusValue",
-            "employeesCount",
-            "isZeroed", // Incluindo novos campos
-          ],
+          attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
         });
         return JSON.parse(JSON.stringify(companies));
       };
@@ -467,36 +414,7 @@ module.exports = class CompanyController {
           { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
           { model: Automation, as: "automations", attributes: ["id", "name"] },
         ],
-        attributes: [
-          "id",
-          "num",
-          "name",
-          "cnpj",
-          "ie",
-          "rule",
-          "classi",
-          "contractInit",
-          "contact",
-          "email",
-          "phone",
-          "status",
-          "statusUpdatedAt",
-          "respFiscalId",
-          "respDpId",
-          "respContabilId",
-          "contactModeId",
-          "important_info",
-          "openedByUs",
-          "uf",
-          "obs",
-          "isArchived",
-          "branchNumber",
-          "sentToClient",
-          "declarationsCompleted",
-          "bonusValue",
-          "employeesCount",
-          "isZeroed", // Incluindo novos campos
-        ],
+        attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
       });
 
       if (!company) {
@@ -868,36 +786,7 @@ module.exports = class CompanyController {
               attributes: ["id", "name"],
             },
           ],
-          attributes: [
-            "id",
-            "num",
-            "name",
-            "cnpj",
-            "ie",
-            "rule",
-            "classi",
-            "contractInit",
-            "contact",
-            "email",
-            "phone",
-            "status",
-            "statusUpdatedAt",
-            "respFiscalId",
-            "respDpId",
-            "respContabilId",
-            "contactModeId",
-            "important_info",
-            "openedByUs",
-            "uf",
-            "obs",
-            "isArchived",
-            "branchNumber",
-            "sentToClient",
-            "declarationsCompleted",
-            "bonusValue",
-            "employeesCount",
-            "isZeroed", // Incluindo novos campos
-          ],
+          attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
         });
         return JSON.parse(JSON.stringify(companies));
       };
@@ -914,12 +803,10 @@ module.exports = class CompanyController {
       logger.error(`Erro ao buscar empresas do usuário: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
-  }
+  } // NOVO MÉTODO: Atualizar dados específicos da visualização Agente
 
-  // NOVO MÉTODO: Atualizar dados específicos da visualização Agente
   static async updateAgentData(req, res) {
-    const companyId = req.params.id;
-    // O request body pode conter um ou mais desses campos
+    const companyId = req.params.id; // O request body pode conter um ou mais desses campos
     const {
       sentToClient,
       declarationsCompleted,
@@ -941,9 +828,8 @@ module.exports = class CompanyController {
 
       logger.info(
         `Usuário (${user.email}) atualizando dados do agente para empresa ID: ${companyId}`
-      );
+      ); // Verificar permissão: Somente o responsável Fiscal ou Pessoal pode editar
 
-      // Verificar permissão: Somente o responsável Fiscal ou Pessoal pode editar
       let hasPermission = false;
       if (user.department === "Fiscal" && company.respFiscalId === user.id) {
         hasPermission = true;
@@ -963,9 +849,8 @@ module.exports = class CompanyController {
           message:
             "Você não tem permissão para atualizar os dados desta empresa.",
         });
-      }
+      } // Lógica para o campo 'Zerado'
 
-      // Lógica para o campo 'Zerado'
       if (typeof isZeroed === "boolean") {
         company.isZeroed = isZeroed;
         if (isZeroed) {
@@ -976,20 +861,16 @@ module.exports = class CompanyController {
           } else if (user.department === "Pessoal") {
             company.employeesCount = 0; // Atribui 0 para Pessoal
           }
-        }
-        // Se desmarcou isZeroed, os campos sentToClient, bonusValue, employeesCount
-        // permanecerão com seus valores anteriores, ou serão atualizados pelos outros campos do payload.
-      }
+        } // Se desmarcou isZeroed, os campos sentToClient, bonusValue, employeesCount // permanecerão com seus valores anteriores, ou serão atualizados pelos outros campos do payload.
+      } // Atualiza os campos na instância da empresa antes de salvar // Só atualiza sentToClient se isZeroed NÃO ESTIVER marcado no payload ou se for false
 
-      // Atualiza os campos na instância da empresa antes de salvar
-      // Só atualiza sentToClient se isZeroed NÃO ESTIVER marcado no payload ou se for false
       if (typeof sentToClient === "boolean" && !company.isZeroed) {
         company.sentToClient = sentToClient;
       } else if (typeof sentToClient === "boolean" && company.isZeroed) {
         // Se isZeroed está true, sentToClient deve ser false, então ignora updates para true
         if (sentToClient === true) {
           logger.warn(
-            `Tentativa de marcar sentToClient como true para empresa zerada (ID: ${companyId}). Ignorando.`
+            `Tentativa de marcar sentToClient como true para empresa zerada (ID: ${companyId}). Forçando para false.`
           );
         }
         company.sentToClient = false; // Garante que é false se Zerado
@@ -997,10 +878,8 @@ module.exports = class CompanyController {
 
       if (typeof declarationsCompleted === "boolean") {
         company.declarationsCompleted = declarationsCompleted;
-      }
+      } // Garante que o valor seja salvo como null se for uma string vazia (vinda do input de texto) // Só atualiza bonusValue/employeesCount se isZeroed NÃO ESTIVER marcado no payload ou for false
 
-      // Garante que o valor seja salvo como null se for uma string vazia (vinda do input de texto)
-      // Só atualiza bonusValue/employeesCount se isZeroed NÃO ESTIVER marcado no payload ou for false
       if (!company.isZeroed) {
         // Se a empresa NÃO está marcada como Zerada
         if (bonusValue !== undefined) {
@@ -1034,15 +913,12 @@ module.exports = class CompanyController {
         }
       }
 
-      // Removida toda a lógica de isZeroed, pois a coluna foi removida
-
       await company.save(); // Salva todas as alterações de uma vez
 
       logger.info(
         `Dados do agente para empresa ${company.name} (ID: ${companyId}) atualizados por ${user.email}. isZeroed: ${company.isZeroed}`
-      );
+      ); // Invalida e recarrega os caches relevantes
 
-      // Invalida e recarrega os caches relevantes
       invalidateCache([
         "my_companies_" + user.id, // O mais importante é o cache do próprio usuário
       ]);
@@ -1069,15 +945,11 @@ module.exports = class CompanyController {
         logger.warn(
           `Usuário (${user.email}) tentou acessar dashboard fiscal geral sem permissão.`
         );
-        return res
-          .status(403)
-          .json({
-            message:
-              "Acesso restrito ao departamento Fiscal ou administradores.",
-          });
-      }
+        return res.status(403).json({
+          message: "Acesso restrito ao departamento Fiscal ou administradores.",
+        });
+      } // Lógica para buscar dados gerais
 
-      // Lógica para buscar dados gerais
       const totalCompanies = await Company.count({
         where: { status: "ATIVA", isArchived: false },
       });
@@ -1093,9 +965,8 @@ module.exports = class CompanyController {
           sentToClient: true,
           declarationsCompleted: true,
         },
-      });
+      }); // Lógica para obter dados por usuário do departamento Fiscal
 
-      // Lógica para obter dados por usuário do departamento Fiscal
       const fiscalUsers = await User.findAll({
         where: { department: "Fiscal" },
         attributes: ["id", "name"],
@@ -1158,32 +1029,26 @@ module.exports = class CompanyController {
 
   static async getFiscalDashboardMyCompaniesData(req, res) {
     const targetUserId = req.params.userId;
-    const user = req.user; // Usuário do token
+    const user = req.user; // Usuário do token // Validação de segurança: garantir que o usuário está buscando seus próprios dados ou é um admin
 
-    // Validação de segurança: garantir que o usuário está buscando seus próprios dados ou é um admin
     if (user.id != targetUserId && user.role !== "admin") {
       logger.warn(
         `Usuário (${user.email}) tentou acessar dashboard de 'Minhas Empresas' de outro usuário (${targetUserId}) sem permissão.`
       );
-      return res
-        .status(403)
-        .json({
-          message:
-            "Você não tem permissão para acessar os dados de outro usuário.",
-        });
-    }
+      return res.status(403).json({
+        message:
+          "Você não tem permissão para acessar os dados de outro usuário.",
+      });
+    } // Apenas usuários do departamento Fiscal podem ter a visualização 'Minhas Empresas'
 
-    // Apenas usuários do departamento Fiscal podem ter a visualização 'Minhas Empresas'
     if (user.department !== "Fiscal" && user.role !== "admin") {
       logger.warn(
         `Usuário (${user.email}) tentou acessar dashboard 'Minhas Empresas' mas não é do departamento Fiscal.`
       );
-      return res
-        .status(403)
-        .json({
-          message:
-            "Esta visualização é restrita a usuários do departamento Fiscal ou administradores.",
-        });
+      return res.status(403).json({
+        message:
+          "Esta visualização é restrita a usuários do departamento Fiscal ou administradores.",
+      });
     }
 
     try {
@@ -1218,11 +1083,9 @@ module.exports = class CompanyController {
         `Erro ao buscar dados de 'Minhas Empresas' para o dashboard fiscal (User ID: ${targetUserId}): ${error.message}`,
         { stack: error.stack }
       );
-      res
-        .status(500)
-        .json({
-          message: "Erro ao carregar dados do dashboard de 'Minhas Empresas'.",
-        });
+      res.status(500).json({
+        message: "Erro ao carregar dados do dashboard de 'Minhas Empresas'.",
+      });
     }
   }
 };

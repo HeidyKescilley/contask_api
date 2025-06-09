@@ -128,9 +128,12 @@ const Company = db.define(
       type: DataTypes.INTEGER, // Para contagem de funcionários do Pessoal
       allowNull: true,
     },
-    // Removido o campo isCompleted
     isZeroed: {
-      // Novo campo para o checkbox "Zerado"
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    }, // NOVO CAMPO: isHeadquarters
+    isHeadquarters: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
