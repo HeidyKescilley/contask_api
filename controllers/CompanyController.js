@@ -185,6 +185,8 @@ async function reloadMyCompanies(userId) {
 }
 
 module.exports = class CompanyController {
+  // ... MANTER AS FUNÇÕES addCompany, sendCompanyRegisteredEmails, editCompany, getAll, getOne ...
+
   static async addCompany(req, res) {
     try {
       const {
@@ -430,6 +432,8 @@ module.exports = class CompanyController {
       return res.status(500).json({ message: error.message });
     }
   }
+
+  // ... MANTER AS FUNÇÕES changeStatus, sendStatusChangeEmails, getStatusHistory, etc. ...
 
   static async changeStatus(req, res) {
     const companyId = req.params.id;
@@ -940,7 +944,7 @@ module.exports = class CompanyController {
 
   static async getFiscalDashboardGeneralData(req, res) {
     try {
-      const user = req.user; // Usuário logado
+      const user = req.user;
       if (user.role !== "admin" && user.department !== "Fiscal") {
         logger.warn(
           `Usuário (${user.email}) tentou acessar dashboard fiscal geral sem permissão.`
@@ -948,67 +952,74 @@ module.exports = class CompanyController {
         return res.status(403).json({
           message: "Acesso restrito ao departamento Fiscal ou administradores.",
         });
-      } // Lógica para buscar dados gerais
+      }
 
-      const totalCompanies = await Company.count({
-        where: { status: "ATIVA", isArchived: false },
-      });
-
-      const zeroedCompanies = await Company.count({
-        where: { status: "ATIVA", isArchived: false, isZeroed: true },
-      });
-
-      const completedCompanies = await Company.count({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          sentToClient: true,
-          declarationsCompleted: true,
-        },
-      }); // Lógica para obter dados por usuário do departamento Fiscal
-
+      // 1. Primeira Query: Buscar todos os usuários fiscais de uma vez.
       const fiscalUsers = await User.findAll({
         where: { department: "Fiscal" },
         attributes: ["id", "name"],
       });
 
-      const usersData = [];
-      for (const fiscalUser of fiscalUsers) {
-        const userCompaniesWhereClause = {
-          status: "ATIVA",
-          isArchived: false,
-          [Op.or]: [
-            { respFiscalId: fiscalUser.id },
-            { respDpId: fiscalUser.id }, // Inclui responsabilidade DP se o usuário Fiscal também for resp DP
-          ],
-        };
+      // Prepara um mapa para acesso rápido aos dados dos usuários
+      const usersDataMap = new Map();
+      fiscalUsers.forEach((fu) => {
+        usersDataMap.set(fu.id, {
+          id: fu.id,
+          name: fu.name,
+          totalCompaniesAssigned: 0,
+          completedCompanies: 0,
+          nonCompletedCompanies: 0,
+          zeroedCompanies: 0,
+        });
+      });
 
-        const userTotalCompanies = await Company.count({
-          where: userCompaniesWhereClause,
-        });
-        const userCompletedCompanies = await Company.count({
-          where: {
-            ...userCompaniesWhereClause,
-            sentToClient: true,
-            declarationsCompleted: true,
-          },
-        });
-        const userZeroedCompanies = await Company.count({
-          where: {
-            ...userCompaniesWhereClause,
-            isZeroed: true,
-          },
-        });
+      // 2. Segunda Query: Buscar todos os dados relevantes das empresas de uma vez.
+      const allActiveCompanies = await Company.findAll({
+        where: { status: "ATIVA", isArchived: false },
+        attributes: [
+          "isZeroed",
+          "sentToClient",
+          "declarationsCompleted",
+          "respFiscalId",
+        ],
+        raw: true, // Retorna dados puros para máxima performance
+      });
 
-        usersData.push({
-          id: fiscalUser.id,
-          name: fiscalUser.name,
-          totalCompaniesAssigned: userTotalCompanies,
-          completedCompanies: userCompletedCompanies,
-          nonCompletedCompanies: userTotalCompanies - userCompletedCompanies,
-          zeroedCompanies: userZeroedCompanies,
-        });
+      // 3. Processamento em Memória (muito mais rápido que queries)
+      let totalCompanies = allActiveCompanies.length;
+      let zeroedCompanies = 0;
+      let completedCompanies = 0;
+
+      for (const company of allActiveCompanies) {
+        const isCompleted =
+          company.sentToClient && company.declarationsCompleted;
+
+        if (company.isZeroed) {
+          zeroedCompanies++;
+        }
+        if (isCompleted) {
+          completedCompanies++;
+        }
+
+        // Agrega dados para o usuário responsável
+        const responsibleUser = usersDataMap.get(company.respFiscalId);
+        if (responsibleUser) {
+          responsibleUser.totalCompaniesAssigned++;
+          if (isCompleted) {
+            responsibleUser.completedCompanies++;
+          }
+          if (company.isZeroed) {
+            responsibleUser.zeroedCompanies++;
+          }
+        }
       }
+
+      // Converte o mapa de volta para um array para a resposta JSON
+      const usersData = Array.from(usersDataMap.values()).map((ud) => {
+        ud.nonCompletedCompanies =
+          ud.totalCompaniesAssigned - ud.completedCompanies;
+        return ud;
+      });
 
       res.status(200).json({
         totalCompanies,
