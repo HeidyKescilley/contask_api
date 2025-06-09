@@ -10,6 +10,7 @@ const createUserToken = async (user, req, res) => {
       name: user.name,
       id: user.id,
       role: user.role,
+      department: user.department, // <-- ADICIONADO AQUI
     },
     secret,
     { expiresIn }
