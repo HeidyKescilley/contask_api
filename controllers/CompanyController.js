@@ -67,11 +67,8 @@ const COMPANY_ATTRIBUTES = [
   "obs",
   "isArchived",
   "branchNumber",
-  "sentToClient",
-  "declarationsCompleted",
   "bonusValue",
   "employeesCount",
-  "isZeroed",
   "isHeadquarters", // Novos campos
   "isZeroedFiscal",
   "sentToClientFiscal",

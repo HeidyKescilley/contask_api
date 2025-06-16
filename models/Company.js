@@ -114,6 +114,10 @@ const Company = db.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    employeesCount: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
     isHeadquarters: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
