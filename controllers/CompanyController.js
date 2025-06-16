@@ -72,7 +72,17 @@ const COMPANY_ATTRIBUTES = [
   "bonusValue",
   "employeesCount",
   "isZeroed",
-  "isHeadquarters", // Adicionado isHeadquarters aqui
+  "isHeadquarters", // Novos campos
+  "isZeroedFiscal",
+  "sentToClientFiscal",
+  "declarationsCompletedFiscal",
+  "isZeroedDp",
+  "sentToClientDp",
+  "declarationsCompletedDp",
+  "fiscalCompletedAt",
+  "dpCompletedAt",
+  "hasNoFiscalObligations",
+  "hasNoDpObligations",
 ];
 
 async function reloadAllCompanies() {
@@ -185,8 +195,6 @@ async function reloadMyCompanies(userId) {
 }
 
 module.exports = class CompanyController {
-  // ... MANTER AS FUNÇÕES addCompany, sendCompanyRegisteredEmails, editCompany, getAll, getOne ...
-
   static async addCompany(req, res) {
     try {
       const {
@@ -205,7 +213,7 @@ module.exports = class CompanyController {
         important_info,
         obs,
         branchNumber,
-        isHeadquarters, // NOVO: Receber isHeadquarters
+        isHeadquarters,
       } = req.body;
 
       logger.info(
@@ -247,12 +255,18 @@ module.exports = class CompanyController {
         statusUpdatedAt: new Date(),
         obs,
         branchNumber,
+        isHeadquarters: isHeadquarters || false,
         sentToClient: false,
         declarationsCompleted: false,
+        isZeroed: false,
+        sentToClientFiscal: false,
+        declarationsCompletedFiscal: false,
+        isZeroedFiscal: false,
+        sentToClientDp: false,
+        declarationsCompletedDp: false,
+        isZeroedDp: false,
         bonusValue: null,
         employeesCount: null,
-        isZeroed: false,
-        isHeadquarters: isHeadquarters || false, // NOVO: Definir valor inicial
       });
 
       await StatusHistory.create({
@@ -432,8 +446,6 @@ module.exports = class CompanyController {
       return res.status(500).json({ message: error.message });
     }
   }
-
-  // ... MANTER AS FUNÇÕES changeStatus, sendStatusChangeEmails, getStatusHistory, etc. ...
 
   static async changeStatus(req, res) {
     const companyId = req.params.id;
@@ -807,18 +819,12 @@ module.exports = class CompanyController {
       logger.error(`Erro ao buscar empresas do usuário: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
-  } // NOVO MÉTODO: Atualizar dados específicos da visualização Agente
+  }
 
   static async updateAgentData(req, res) {
-    const companyId = req.params.id; // O request body pode conter um ou mais desses campos
-    const {
-      sentToClient,
-      declarationsCompleted,
-      bonusValue,
-      employeesCount,
-      isZeroed,
-    } = req.body; // Adicionado isZeroed
-    const user = req.user; // Usuário logado
+    const companyId = req.params.id;
+    const agentData = req.body;
+    const user = req.user;
 
     try {
       const company = await Company.findByPk(companyId);
@@ -832,100 +838,118 @@ module.exports = class CompanyController {
 
       logger.info(
         `Usuário (${user.email}) atualizando dados do agente para empresa ID: ${companyId}`
-      ); // Verificar permissão: Somente o responsável Fiscal ou Pessoal pode editar
+      );
 
-      let hasPermission = false;
-      if (user.department === "Fiscal" && company.respFiscalId === user.id) {
-        hasPermission = true;
-      } else if (
-        user.department === "Pessoal" &&
-        company.respDpId === user.id
-      ) {
-        hasPermission = true;
-      }
+      const updatePayload = {};
+      // Pega uma cópia do estado da empresa ANTES da atualização
+      const previousState = company.get({ plain: true });
 
-      if (!hasPermission && user.role !== "admin") {
-        // Admins também têm permissão
-        logger.warn(
-          `Usuário (${user.email}) sem permissão para atualizar dados do agente da empresa ID: ${companyId}`
-        );
-        return res.status(403).json({
-          message:
-            "Você não tem permissão para atualizar os dados desta empresa.",
-        });
-      } // Lógica para o campo 'Zerado'
-
-      if (typeof isZeroed === "boolean") {
-        company.isZeroed = isZeroed;
-        if (isZeroed) {
-          // Se marcou como "Zerado"
-          company.sentToClient = false; // Desabilita envio
-          if (user.department === "Fiscal") {
-            company.bonusValue = 1; // Atribui 1 para Fiscal
-          } else if (user.department === "Pessoal") {
-            company.employeesCount = 0; // Atribui 0 para Pessoal
+      // ---- LÓGICA PARA O DEPARTAMENTO FISCAL ----
+      if (user.department === "Fiscal" || user.role === "admin") {
+        if ("sentToClientFiscal" in agentData)
+          updatePayload.sentToClientFiscal = agentData.sentToClientFiscal;
+        if ("declarationsCompletedFiscal" in agentData)
+          updatePayload.declarationsCompletedFiscal =
+            agentData.declarationsCompletedFiscal;
+        if ("bonusValue" in agentData)
+          updatePayload.bonusValue =
+            agentData.bonusValue === ""
+              ? null
+              : parseInt(agentData.bonusValue, 10);
+        if ("isZeroedFiscal" in agentData) {
+          updatePayload.isZeroedFiscal = agentData.isZeroedFiscal;
+          if (agentData.isZeroedFiscal) {
+            updatePayload.sentToClientFiscal = false;
+            updatePayload.bonusValue = 1;
           }
-        } // Se desmarcou isZeroed, os campos sentToClient, bonusValue, employeesCount // permanecerão com seus valores anteriores, ou serão atualizados pelos outros campos do payload.
-      } // Atualiza os campos na instância da empresa antes de salvar // Só atualiza sentToClient se isZeroed NÃO ESTIVER marcado no payload ou se for false
-
-      if (typeof sentToClient === "boolean" && !company.isZeroed) {
-        company.sentToClient = sentToClient;
-      } else if (typeof sentToClient === "boolean" && company.isZeroed) {
-        // Se isZeroed está true, sentToClient deve ser false, então ignora updates para true
-        if (sentToClient === true) {
-          logger.warn(
-            `Tentativa de marcar sentToClient como true para empresa zerada (ID: ${companyId}). Forçando para false.`
-          );
         }
-        company.sentToClient = false; // Garante que é false se Zerado
-      }
-
-      if (typeof declarationsCompleted === "boolean") {
-        company.declarationsCompleted = declarationsCompleted;
-      } // Garante que o valor seja salvo como null se for uma string vazia (vinda do input de texto) // Só atualiza bonusValue/employeesCount se isZeroed NÃO ESTIVER marcado no payload ou for false
-
-      if (!company.isZeroed) {
-        // Se a empresa NÃO está marcada como Zerada
-        if (bonusValue !== undefined) {
-          company.bonusValue =
-            bonusValue === "" ? null : parseInt(bonusValue, 10);
-        }
-        if (employeesCount !== undefined) {
-          company.employeesCount =
-            employeesCount === "" ? null : parseInt(employeesCount, 10);
-        }
-      } else {
-        // Se a empresa está marcada como Zerada, os valores já foram definidos acima
-        if (
-          user.department === "Fiscal" &&
-          bonusValue !== undefined &&
-          bonusValue !== 1
-        ) {
-          logger.warn(
-            `Tentativa de alterar bonusValue para empresa zerada (ID: ${companyId}). Forçando para 1.`
-          );
-          company.bonusValue = 1;
-        } else if (
-          user.department === "Pessoal" &&
-          employeesCount !== undefined &&
-          employeesCount !== 0
-        ) {
-          logger.warn(
-            `Tentativa de alterar employeesCount para empresa zerada (ID: ${companyId}). Forçando para 0.`
-          );
-          company.employeesCount = 0;
+        if ("hasNoFiscalObligations" in agentData) {
+          updatePayload.hasNoFiscalObligations =
+            agentData.hasNoFiscalObligations;
+          if (agentData.hasNoFiscalObligations) {
+            updatePayload.declarationsCompletedFiscal = false;
+          }
         }
       }
 
-      await company.save(); // Salva todas as alterações de uma vez
+      // ---- LÓGICA PARA O DEPARTAMENTO PESSOAL ----
+      if (user.department === "Pessoal" || user.role === "admin") {
+        if ("sentToClientDp" in agentData)
+          updatePayload.sentToClientDp = agentData.sentToClientDp;
+        if ("declarationsCompletedDp" in agentData)
+          updatePayload.declarationsCompletedDp =
+            agentData.declarationsCompletedDp;
+        if ("employeesCount" in agentData)
+          updatePayload.employeesCount =
+            agentData.employeesCount === ""
+              ? null
+              : parseInt(agentData.employeesCount, 10);
+        if ("isZeroedDp" in agentData) {
+          updatePayload.isZeroedDp = agentData.isZeroedDp;
+          if (agentData.isZeroedDp) {
+            updatePayload.sentToClientDp = false;
+            updatePayload.employeesCount = 0;
+          }
+        }
+        if ("hasNoDpObligations" in agentData) {
+          updatePayload.hasNoDpObligations = agentData.hasNoDpObligations;
+          if (agentData.hasNoDpObligations) {
+            updatePayload.declarationsCompletedDp = false;
+          }
+        }
+      }
+
+      // Simula o estado da empresa APÓS a atualização para checar as condições
+      const potentialNewState = { ...previousState, ...updatePayload };
+
+      // --- LÓGICA DE TIMESTAMP DE CONCLUSÃO E LIMPEZA PARA O FISCAL ---
+      const isFiscalNormallyCompleted =
+        potentialNewState.sentToClientFiscal &&
+        potentialNewState.declarationsCompletedFiscal;
+      const isFiscalZeroedAndCompleted =
+        potentialNewState.isZeroedFiscal &&
+        potentialNewState.declarationsCompletedFiscal;
+      const isFiscalConsideredComplete =
+        isFiscalNormallyCompleted || isFiscalZeroedAndCompleted;
+
+      if (isFiscalConsideredComplete && !previousState.fiscalCompletedAt) {
+        // Se a condição de concluído foi atingida e não havia data, REGISTRA a data
+        updatePayload.fiscalCompletedAt = new Date();
+      } else if (
+        !isFiscalConsideredComplete &&
+        previousState.fiscalCompletedAt
+      ) {
+        // Se a condição de concluído não é mais válida e havia uma data, LIMPA a data
+        updatePayload.fiscalCompletedAt = null;
+      }
+
+      // --- LÓGICA DE TIMESTAMP DE CONCLUSÃO E LIMPEZA PARA O DP ---
+      const isDpNormallyCompleted =
+        potentialNewState.sentToClientDp &&
+        potentialNewState.declarationsCompletedDp;
+      const isDpZeroedAndCompleted =
+        potentialNewState.isZeroedDp &&
+        potentialNewState.declarationsCompletedDp;
+      const isDpConsideredComplete =
+        isDpNormallyCompleted || isDpZeroedAndCompleted;
+
+      if (isDpConsideredComplete && !previousState.dpCompletedAt) {
+        // Se a condição de concluído foi atingida e não havia data, REGISTRA a data
+        updatePayload.dpCompletedAt = new Date();
+      } else if (!isDpConsideredComplete && previousState.dpCompletedAt) {
+        // Se a condição de concluído não é mais válida e havia uma data, LIMPA a data
+        updatePayload.dpCompletedAt = null;
+      }
+
+      // Aplica todas as mudanças no banco de dados
+      await company.update(updatePayload);
 
       logger.info(
-        `Dados do agente para empresa ${company.name} (ID: ${companyId}) atualizados por ${user.email}. isZeroed: ${company.isZeroed}`
-      ); // Invalida e recarrega os caches relevantes
+        `Dados do agente para empresa ${company.name} (ID: ${companyId}) atualizados por ${user.email}.`
+      );
 
-      invalidateCache([
-        "my_companies_" + user.id, // O mais importante é o cache do próprio usuário
-      ]);
+      // Invalida o cache para garantir que os dados sejam recarregados na próxima requisição
+      invalidateCache(["my_companies_" + user.id]);
       await reloadMyCompanies(user.id);
 
       return res
@@ -939,102 +963,6 @@ module.exports = class CompanyController {
       return res
         .status(500)
         .json({ message: "Erro ao atualizar dados do agente." });
-    }
-  }
-
-  static async getFiscalDashboardGeneralData(req, res) {
-    try {
-      const user = req.user;
-      if (user.role !== "admin" && user.department !== "Fiscal") {
-        logger.warn(
-          `Usuário (${user.email}) tentou acessar dashboard fiscal geral sem permissão.`
-        );
-        return res.status(403).json({
-          message: "Acesso restrito ao departamento Fiscal ou administradores.",
-        });
-      }
-
-      // 1. Primeira Query: Buscar todos os usuários fiscais de uma vez.
-      const fiscalUsers = await User.findAll({
-        where: { department: "Fiscal" },
-        attributes: ["id", "name"],
-      });
-
-      // Prepara um mapa para acesso rápido aos dados dos usuários
-      const usersDataMap = new Map();
-      fiscalUsers.forEach((fu) => {
-        usersDataMap.set(fu.id, {
-          id: fu.id,
-          name: fu.name,
-          totalCompaniesAssigned: 0,
-          completedCompanies: 0,
-          nonCompletedCompanies: 0,
-          zeroedCompanies: 0,
-        });
-      });
-
-      // 2. Segunda Query: Buscar todos os dados relevantes das empresas de uma vez.
-      const allActiveCompanies = await Company.findAll({
-        where: { status: "ATIVA", isArchived: false },
-        attributes: [
-          "isZeroed",
-          "sentToClient",
-          "declarationsCompleted",
-          "respFiscalId",
-        ],
-        raw: true, // Retorna dados puros para máxima performance
-      });
-
-      // 3. Processamento em Memória (muito mais rápido que queries)
-      let totalCompanies = allActiveCompanies.length;
-      let zeroedCompanies = 0;
-      let completedCompanies = 0;
-
-      for (const company of allActiveCompanies) {
-        const isCompleted =
-          company.sentToClient && company.declarationsCompleted;
-
-        if (company.isZeroed) {
-          zeroedCompanies++;
-        }
-        if (isCompleted) {
-          completedCompanies++;
-        }
-
-        // Agrega dados para o usuário responsável
-        const responsibleUser = usersDataMap.get(company.respFiscalId);
-        if (responsibleUser) {
-          responsibleUser.totalCompaniesAssigned++;
-          if (isCompleted) {
-            responsibleUser.completedCompanies++;
-          }
-          if (company.isZeroed) {
-            responsibleUser.zeroedCompanies++;
-          }
-        }
-      }
-
-      // Converte o mapa de volta para um array para a resposta JSON
-      const usersData = Array.from(usersDataMap.values()).map((ud) => {
-        ud.nonCompletedCompanies =
-          ud.totalCompaniesAssigned - ud.completedCompanies;
-        return ud;
-      });
-
-      res.status(200).json({
-        totalCompanies,
-        zeroedCompanies,
-        completedCompanies,
-        usersData,
-      });
-    } catch (error) {
-      logger.error(
-        `Erro ao buscar dados gerais do dashboard fiscal: ${error.message}`,
-        { stack: error.stack }
-      );
-      res
-        .status(500)
-        .json({ message: "Erro ao buscar dados gerais do dashboard fiscal." });
     }
   }
 
@@ -1099,9 +1027,275 @@ module.exports = class CompanyController {
       });
     }
   }
+
+  static async getFiscalDashboardGeneralData(req, res) {
+    try {
+      const user = req.user;
+      if (user.role !== "admin" && user.department !== "Fiscal") {
+        logger.warn(
+          `Usuário (${user.email}) tentou acessar dashboard fiscal geral sem permissão.`
+        );
+        return res.status(403).json({
+          message: "Acesso restrito ao departamento Fiscal ou administradores.",
+        });
+      }
+
+      const fiscalUsers = await User.findAll({
+        where: { department: "Fiscal" },
+        attributes: ["id", "name"],
+      });
+
+      const usersDataMap = new Map();
+      fiscalUsers.forEach((fu) => {
+        usersDataMap.set(fu.id, {
+          id: fu.id,
+          name: fu.name,
+          totalCompaniesAssigned: 0,
+          completedCompanies: 0,
+          nonCompletedCompanies: 0,
+          zeroedCompanies: 0,
+        });
+      });
+
+      // Busca as empresas que devem ser consideradas nas estatísticas
+      const relevantCompanies = await Company.findAll({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          // Exclui da contagem as empresas que são "Zeradas" E "Sem Obrigações"
+          [Op.not]: {
+            [Op.and]: [
+              { isZeroedFiscal: true },
+              { hasNoFiscalObligations: true },
+            ],
+          },
+        },
+        attributes: [
+          "isZeroedFiscal", // CORRIGIDO: Usa o campo específico do fiscal
+          "sentToClientFiscal",
+          "declarationsCompletedFiscal",
+          "respFiscalId",
+        ],
+        raw: true,
+      });
+
+      let totalCompanies = relevantCompanies.length;
+      let zeroedCompaniesCount = 0; // Contador separado para zeradas totais (antes da exclusão)
+      let completedCompanies = 0;
+
+      // Primeiro, contamos as zeradas de todas as empresas ativas para o card
+      const allActiveCompanies = await Company.findAll({
+        where: { status: "ATIVA", isArchived: false },
+        attributes: ["isZeroedFiscal"],
+        raw: true,
+      });
+      allActiveCompanies.forEach((c) => {
+        if (c.isZeroedFiscal) zeroedCompaniesCount++;
+      });
+
+      for (const company of relevantCompanies) {
+        const isCompleted =
+          company.sentToClientFiscal && company.declarationsCompletedFiscal;
+
+        if (isCompleted) {
+          completedCompanies++;
+        }
+
+        const responsibleUser = usersDataMap.get(company.respFiscalId);
+        if (responsibleUser) {
+          responsibleUser.totalCompaniesAssigned++;
+          if (isCompleted) {
+            responsibleUser.completedCompanies++;
+          }
+          if (company.isZeroedFiscal) {
+            responsibleUser.zeroedCompanies++;
+          }
+        }
+      }
+
+      const usersData = Array.from(usersDataMap.values()).map((ud) => {
+        ud.nonCompletedCompanies =
+          ud.totalCompaniesAssigned - ud.completedCompanies;
+        return ud;
+      });
+
+      res.status(200).json({
+        totalCompanies,
+        zeroedCompanies: zeroedCompaniesCount, // Usa a contagem total de zeradas
+        completedCompanies,
+        usersData,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados gerais do dashboard fiscal: ${error.message}`,
+        { stack: error.stack }
+      );
+      res
+        .status(500)
+        .json({ message: "Erro ao buscar dados gerais do dashboard fiscal." });
+    }
+  }
+
+  static async getDpDashboardGeneralData(req, res) {
+    try {
+      const user = req.user;
+      if (user.role !== "admin" && user.department !== "Pessoal") {
+        logger.warn(
+          `Usuário (${user.email}) tentou acessar dashboard DP geral sem permissão.`
+        );
+        return res.status(403).json({
+          message:
+            "Acesso restrito ao departamento Pessoal ou administradores.",
+        });
+      }
+
+      const dpUsers = await User.findAll({
+        where: { department: "Pessoal" },
+        attributes: ["id", "name"],
+      });
+
+      const usersDataMap = new Map();
+      dpUsers.forEach((dpUser) => {
+        usersDataMap.set(dpUser.id, {
+          id: dpUser.id,
+          name: dpUser.name,
+          totalCompaniesAssigned: 0,
+          completedCompanies: 0,
+          nonCompletedCompanies: 0,
+          zeroedCompanies: 0,
+        });
+      });
+
+      // Busca considerando a nova regra de exclusão para o DP
+      const relevantCompanies = await Company.findAll({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          // Exclui da contagem se (isZeroedDp E hasNoDpObligations) for TRUE
+          [Op.not]: {
+            [Op.and]: [{ isZeroedDp: true }, { hasNoDpObligations: true }],
+          },
+        },
+        attributes: [
+          "isZeroedDp",
+          "sentToClientDp",
+          "declarationsCompletedDp",
+          "respDpId",
+        ],
+        raw: true,
+      });
+
+      let totalCompanies = relevantCompanies.length;
+      let zeroedCompanies = 0;
+      let completedCompanies = 0;
+
+      for (const company of relevantCompanies) {
+        const isCompleted =
+          company.sentToClientDp && company.declarationsCompletedDp;
+
+        if (company.isZeroedDp) {
+          zeroedCompanies++;
+        }
+        if (isCompleted) {
+          completedCompanies++;
+        }
+
+        const responsibleUser = usersDataMap.get(company.respDpId);
+        if (responsibleUser) {
+          responsibleUser.totalCompaniesAssigned++;
+          if (isCompleted) {
+            responsibleUser.completedCompanies++;
+          }
+          if (company.isZeroedDp) {
+            responsibleUser.zeroedCompanies++;
+          }
+        }
+      }
+
+      const usersData = Array.from(usersDataMap.values()).map((ud) => {
+        ud.nonCompletedCompanies =
+          ud.totalCompaniesAssigned - ud.completedCompanies;
+        return ud;
+      });
+
+      res.status(200).json({
+        totalCompanies,
+        zeroedCompanies,
+        completedCompanies,
+        usersData,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados gerais do dashboard DP: ${error.message}`,
+        { stack: error.stack }
+      );
+      res
+        .status(500)
+        .json({ message: "Erro ao buscar dados gerais do dashboard DP." });
+    }
+  }
+
+  static async getDpDashboardMyCompaniesData(req, res) {
+    const targetUserId = req.params.userId;
+    const user = req.user;
+
+    if (user.id != targetUserId && user.role !== "admin") {
+      logger.warn(
+        `Usuário (${user.email}) tentou acessar dashboard de 'Minhas Empresas' de outro usuário (${targetUserId}) sem permissão.`
+      );
+      return res.status(403).json({
+        message:
+          "Você não tem permissão para acessar os dados de outro usuário.",
+      });
+    }
+
+    if (user.department !== "Pessoal" && user.role !== "admin") {
+      logger.warn(
+        `Usuário (${user.email}) tentou acessar dashboard 'Minhas Empresas' mas não é do departamento Pessoal.`
+      );
+      return res.status(403).json({
+        message:
+          "Esta visualização é restrita a usuários do departamento Pessoal ou administradores.",
+      });
+    }
+
+    try {
+      const whereClause = {
+        status: "ATIVA",
+        isArchived: false,
+        respDpId: targetUserId,
+      };
+
+      const totalCompanies = await Company.count({ where: whereClause });
+      const zeroedCompanies = await Company.count({
+        where: { ...whereClause, isZeroedDp: true },
+      });
+      const completedCompanies = await Company.count({
+        where: {
+          ...whereClause,
+          sentToClientDp: true,
+          declarationsCompletedDp: true,
+        },
+      });
+
+      res.status(200).json({
+        totalCompanies,
+        zeroedCompanies,
+        completedCompanies,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados de 'Minhas Empresas' para o dashboard DP (User ID: ${targetUserId}): ${error.message}`,
+        { stack: error.stack }
+      );
+      res.status(500).json({
+        message: "Erro ao carregar dados do dashboard de 'Minhas Empresas'.",
+      });
+    }
+  }
 };
 
-// Função para invalidar caches por prefixo, útil para "my_companies_USERID"
+// Função para invalidar caches por prefixo, útil para "my_companies_USERID"update
 function invalidateCachesByPrefix(prefix) {
   const keysToDelete = cache.keys().filter((key) => key.startsWith(prefix));
   if (keysToDelete.length > 0) {

@@ -112,7 +112,9 @@ module.exports = {
         .filter((email) => email);
 
       if (userEmails.length === 0) {
-        return res.status(400).json({ message: "Nenhum usuário encontrado para envio." });
+        return res
+          .status(400)
+          .json({ message: "Nenhum usuário encontrado para envio." });
       }
 
       await transporter.sendMail({
@@ -122,10 +124,14 @@ module.exports = {
         html: emailContent,
       });
 
-      logger.info(`Email manual de empresas suspensas enviado para ${userEmails.length} usuários.`);
+      logger.info(
+        `Email manual de empresas suspensas enviado para ${userEmails.length} usuários.`
+      );
       return res.status(200).json({ message: "Email enviado com sucesso." });
     } catch (error) {
-      logger.error(`Erro ao enviar email manual de empresas suspensas: ${error.message}`);
+      logger.error(
+        `Erro ao enviar email manual de empresas suspensas: ${error.message}`
+      );
       return res.status(500).json({ message: "Erro ao enviar email." });
     }
   },
@@ -179,8 +185,8 @@ module.exports = {
         "recent_status_changes",
       ];
       cacheUtils.invalidateCache(globalCacheKeys);
-      logger.info(`Caches globais invalidados: ${globalCacheKeys.join(', ')}`);
-      
+      logger.info(`Caches globais invalidados: ${globalCacheKeys.join(", ")}`);
+
       // Invalida todos os caches de "my_companies_*"
       cacheUtils.invalidateCachesByPrefix("my_companies_");
 
@@ -189,11 +195,13 @@ module.exports = {
       await cacheUtils.reloadRecentCompanies();
       await cacheUtils.reloadRecentActiveCompanies();
       await cacheUtils.reloadRecentStatusChanges();
-      
+
       // Recarrega o cache "my_companies" do admin que realizou a ação, se ele tiver um ID de usuário
       if (req.user && req.user.id) {
         await cacheUtils.reloadMyCompanies(req.user.id);
-        logger.info(`Cache 'my_companies_${req.user.id}' recarregado para o admin.`);
+        logger.info(
+          `Cache 'my_companies_${req.user.id}' recarregado para o admin.`
+        );
       }
       // Os caches "my_companies_USERID" de outros usuários serão recarregados sob demanda (quando eles acessarem a página),
       // pois seus caches específicos para essa chave foram deletados.
@@ -207,7 +215,8 @@ module.exports = {
         .json({ message: "Empresa arquivada com sucesso." });
     } catch (error) {
       logger.error(
-        `Erro ao arquivar manualmente a empresa (ID: ${companyId}): ${error.message}`, { stack: error.stack }
+        `Erro ao arquivar manualmente a empresa (ID: ${companyId}): ${error.message}`,
+        { stack: error.stack }
       );
       return res.status(500).json({ message: "Erro ao arquivar a empresa." });
     }
@@ -216,54 +225,58 @@ module.exports = {
     const userId = req.params.id;
     const { newPassword } = req.body;
     const adminUser = req.user; // Usuário admin que está realizando a ação
-  
+
     if (!newPassword || newPassword.trim() === "") {
       logger.warn(
         `Admin (${adminUser.email}) tentou alterar senha do usuário ID ${userId} sem fornecer uma nova senha.`
       );
       return res.status(400).json({ message: "A nova senha é obrigatória." });
     }
-  
+
     // Opcional: Adicionar validação de complexidade da senha aqui, se desejado.
     // Ex: if (newPassword.length < 8) return res.status(400).json({ message: "Senha muito curta."})
-  
+
     try {
       const userToChange = await User.findByPk(userId);
-  
+
       if (!userToChange) {
         logger.warn(
           `Admin (${adminUser.email}) falhou ao tentar alterar senha: Usuário não encontrado (ID: ${userId})`
         );
         return res.status(404).json({ message: "Usuário não encontrado." });
       }
-  
+
       // Gerar hash da nova senha
       const bcrypt = require("bcrypt"); // Certifique-se que bcrypt está importado no topo do arquivo se já não estiver
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(newPassword, salt);
-  
+
       userToChange.password = passwordHash;
       await userToChange.save();
-  
+
       logger.info(
         `Senha do usuário ${userToChange.email} (ID: <span class="math-inline">\{userId\}\) alterada com sucesso por Admin \(</span>{adminUser.email}).`
       );
-  
+
       // Enviar email para o usuário com a nova senha
       try {
-        const { adminChangedPasswordEmailTemplate } = require("../emails/templates"); // Certifique-se que está importado no topo do arquivo
+        const {
+          adminChangedPasswordEmailTemplate,
+        } = require("../emails/templates"); // Certifique-se que está importado no topo do arquivo
         const emailContent = adminChangedPasswordEmailTemplate({
           userName: userToChange.name,
           newPassword: newPassword, // Enviando a senha em texto plano como solicitado
         });
-  
+
         await transporter.sendMail({
           from: '"Contask" <naoresponda@contelb.com.br>',
           to: userToChange.email,
           subject: "Sua senha no Contask foi alterada",
           html: emailContent,
         });
-        logger.info(`Email de notificação de alteração de senha enviado para ${userToChange.email}.`);
+        logger.info(
+          `Email de notificação de alteração de senha enviado para ${userToChange.email}.`
+        );
       } catch (emailError) {
         logger.error(
           `Erro ao enviar email de notificação de alteração de senha para ${userToChange.email}: ${emailError.message}`
@@ -271,8 +284,10 @@ module.exports = {
         // Não retornar erro para o admin aqui, pois a senha JÁ FOI alterada.
         // Apenas logar o erro do email.
       }
-  
-      res.status(200).json({ message: "Senha do usuário atualizada com sucesso." });
+
+      res
+        .status(200)
+        .json({ message: "Senha do usuário atualizada com sucesso." });
     } catch (error) {
       logger.error(
         `Erro ao alterar senha do usuário (ID: <span class="math-inline">\{userId\}\) por Admin \(</span>{adminUser.email}): ${error.message}`,

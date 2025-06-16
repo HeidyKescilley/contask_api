@@ -1,4 +1,4 @@
-// /models/Company.js
+// D:\contask_v2\contask_api\models\Company.js
 const { DataTypes } = require("sequelize");
 const db = require("../db/conn.js");
 
@@ -56,7 +56,7 @@ const Company = db.define(
     },
     respFiscalId: {
       type: DataTypes.INTEGER,
-      allowNull: true, // Permitir nulo para responsáveis opcionais
+      allowNull: true,
       references: {
         model: "Users",
         key: "id",
@@ -64,7 +64,7 @@ const Company = db.define(
     },
     respDpId: {
       type: DataTypes.INTEGER,
-      allowNull: true, // Permitir nulo para responsáveis opcionais
+      allowNull: true,
       references: {
         model: "Users",
         key: "id",
@@ -72,7 +72,7 @@ const Company = db.define(
     },
     respContabilId: {
       type: DataTypes.INTEGER,
-      allowNull: true, // Permitir nulo para responsáveis opcionais
+      allowNull: true,
       references: {
         model: "Users",
         key: "id",
@@ -107,33 +107,62 @@ const Company = db.define(
       defaultValue: false,
     },
     branchNumber: {
-      type: DataTypes.STRING, // Ou DataTypes.INTEGER se for sempre número
+      type: DataTypes.STRING,
       allowNull: true,
-    },
-    sentToClient: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
-    },
-    declarationsCompleted: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
     },
     bonusValue: {
-      type: DataTypes.INTEGER, // Para nota Fiscal (0-5)
+      type: DataTypes.INTEGER,
       allowNull: true,
     },
-    employeesCount: {
-      type: DataTypes.INTEGER, // Para contagem de funcionários do Pessoal
-      allowNull: true,
-    },
-    isZeroed: {
+    isHeadquarters: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
-    }, // NOVO CAMPO: isHeadquarters
-    isHeadquarters: {
+    }, // --- NOVOS CAMPOS PARA SETORES INDEPENDENTES ---
+    isZeroedFiscal: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    sentToClientFiscal: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    declarationsCompletedFiscal: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    isZeroedDp: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    sentToClientDp: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    declarationsCompletedDp: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    fiscalCompletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    dpCompletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    hasNoFiscalObligations: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    hasNoDpObligations: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,

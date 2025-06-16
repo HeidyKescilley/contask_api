@@ -7,7 +7,9 @@ const { subDays } = require("date-fns"); // Para cálculo de datas
 const { cacheUtils } = require("../controllers/CompanyController");
 
 const archiveOldCompanies = async () => {
-  logger.info("Executando tarefa agendada: arquivamento de empresas BAIXADA/DISTRATO antigas.");
+  logger.info(
+    "Executando tarefa agendada: arquivamento de empresas BAIXADA/DISTRATO antigas."
+  );
   try {
     const fortyFiveDaysAgo = subDays(new Date(), 45);
 
@@ -34,7 +36,9 @@ const archiveOldCompanies = async () => {
       logger.info(`Empresa ${company.name} (ID: ${company.id}) foi arquivada.`);
     }
 
-    logger.info(`${companiesToArchive.length} empresa(s) arquivada(s) com sucesso.`);
+    logger.info(
+      `${companiesToArchive.length} empresa(s) arquivada(s) com sucesso.`
+    );
 
     // INVALIDAR E RECARREGAR CACHES RELEVANTES
     if (companiesToArchive.length > 0) {
@@ -48,12 +52,12 @@ const archiveOldCompanies = async () => {
         "recent_status_changes",
       ];
       cacheUtils.invalidateCache(globalCacheKeys);
-      logger.info(`Caches globais invalidados: ${globalCacheKeys.join(', ')}`);
+      logger.info(`Caches globais invalidados: ${globalCacheKeys.join(", ")}`);
 
       // Invalida todos os caches de "my_companies_*"
       // Isso garante que qualquer usuário que acesse "Minhas Empresas" buscará dados frescos.
       cacheUtils.invalidateCachesByPrefix("my_companies_");
-      
+
       // Recarrega caches globais
       await cacheUtils.reloadAllCompanies();
       await cacheUtils.reloadRecentCompanies();
@@ -65,9 +69,10 @@ const archiveOldCompanies = async () => {
         "Caches principais recarregados e todos os caches 'my_companies_*' invalidados após arquivamento automático."
       );
     }
-
   } catch (error) {
-    logger.error(`Erro ao arquivar empresas antigas: ${error.message}`, { stack: error.stack });
+    logger.error(`Erro ao arquivar empresas antigas: ${error.message}`, {
+      stack: error.stack,
+    });
   }
 };
 
@@ -82,6 +87,8 @@ cron.schedule(
   }
 );
 
-logger.info("Scheduler de arquivamento de empresas configurado para rodar diariamente à 01:00.");
+logger.info(
+  "Scheduler de arquivamento de empresas configurado para rodar diariamente à 01:00."
+);
 
 module.exports = archiveOldCompanies; // Exportar a função pode ser útil para chamadas manuais ou testes

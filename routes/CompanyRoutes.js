@@ -78,18 +78,34 @@ router.get(
 // Rota parametrizada deve ser a última
 router.get("/:id", verifyToken, activityLogger, CompanyController.getOne);
 
+// Rotas para Dashboard Fiscal
 router.get(
-  "/fiscal-dashboard/all",
+  "/dashboard/fiscal/general",
   verifyToken,
   activityLogger,
   CompanyController.getFiscalDashboardGeneralData
 );
 
 router.get(
-  "/fiscal-dashboard/my-companies/:userId",
+  "/dashboard/fiscal/my-companies/:userId",
   verifyToken,
   activityLogger,
   CompanyController.getFiscalDashboardMyCompaniesData
+);
+
+// Rotas para Dashboard DP
+router.get(
+  "/dashboard/dp/general",
+  verifyToken,
+  activityLogger,
+  CompanyController.getDpDashboardGeneralData
+);
+
+router.get(
+  "/dashboard/dp/my-companies/:userId",
+  verifyToken,
+  activityLogger,
+  CompanyController.getDpDashboardMyCompaniesData
 );
 
 module.exports = router;
