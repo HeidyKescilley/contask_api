@@ -965,7 +965,7 @@ module.exports = class CompanyController {
 
   static async getFiscalDashboardMyCompaniesData(req, res) {
     const targetUserId = req.params.userId;
-    const user = req.user; // Usuário do token // Validação de segurança: garantir que o usuário está buscando seus próprios dados ou é um admin
+    const user = req.user;
 
     if (user.id != targetUserId && user.role !== "admin") {
       logger.warn(
@@ -975,8 +975,7 @@ module.exports = class CompanyController {
         message:
           "Você não tem permissão para acessar os dados de outro usuário.",
       });
-    } // Apenas usuários do departamento Fiscal podem ter a visualização 'Minhas Empresas'
-
+    }
     if (user.department !== "Fiscal" && user.role !== "admin") {
       logger.warn(
         `Usuário (${user.email}) tentou acessar dashboard 'Minhas Empresas' mas não é do departamento Fiscal.`
@@ -988,26 +987,50 @@ module.exports = class CompanyController {
     }
 
     try {
-      const whereClause = {
-        status: "ATIVA",
-        isArchived: false,
-        [Op.or]: [
-          { respFiscalId: targetUserId },
-          { respDpId: targetUserId }, // Inclui responsabilidade DP se o usuário Fiscal também for resp DP
-        ],
-      };
-
-      const totalCompanies = await Company.count({ where: whereClause });
-      const zeroedCompanies = await Company.count({
-        where: { ...whereClause, isZeroed: true },
-      });
-      const completedCompanies = await Company.count({
+      // REFATORADO: Usar findAll para aplicar a lógica complexa em JS.
+      const userCompanies = await Company.findAll({
         where: {
-          ...whereClause,
-          sentToClient: true,
-          declarationsCompleted: true,
+          status: "ATIVA",
+          isArchived: false,
+          respFiscalId: targetUserId,
+          // REGRA 3: Exclui empresas que são zeradas E sem obrigações
+          [Op.not]: {
+            [Op.and]: [
+              { isZeroedFiscal: true },
+              { hasNoFiscalObligations: true },
+            ],
+          },
         },
+        attributes: [
+          "isZeroedFiscal",
+          "sentToClientFiscal",
+          "declarationsCompletedFiscal",
+        ],
+        raw: true,
       });
+
+      const totalCompanies = userCompanies.length;
+      let completedCompanies = 0;
+      let zeroedCompanies = 0;
+
+      // ALTERADO: Loop para aplicar a lógica de conclusão.
+      for (const company of userCompanies) {
+        if (company.isZeroedFiscal) {
+          zeroedCompanies++;
+          // REGRA 2: Zerada é concluída apenas com 'declarationsCompletedFiscal'
+          if (company.declarationsCompletedFiscal) {
+            completedCompanies++;
+          }
+        } else {
+          // REGRA 1: Não zerada precisa de ambos
+          if (
+            company.sentToClientFiscal &&
+            company.declarationsCompletedFiscal
+          ) {
+            completedCompanies++;
+          }
+        }
+      }
 
       res.status(200).json({
         totalCompanies,
@@ -1037,12 +1060,47 @@ module.exports = class CompanyController {
         });
       }
 
+      // NOVO: Calcula o total absoluto de empresas ativas para o card principal
+      const absoluteTotalForDept = await Company.count({
+        where: { status: "ATIVA", isArchived: false },
+      });
+
       const fiscalUsers = await User.findAll({
         where: { department: "Fiscal" },
         attributes: ["id", "name"],
       });
 
       const usersDataMap = new Map();
+      const fiscalUserIds = fiscalUsers.map((u) => u.id);
+
+      const allActiveCompaniesForUsers = await Company.findAll({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          respFiscalId: { [Op.in]: fiscalUserIds },
+        },
+        attributes: ["respFiscalId", "fiscalCompletedAt"],
+        raw: true,
+      });
+
+      const userStats = {};
+      allActiveCompaniesForUsers.forEach((company) => {
+        const userId = company.respFiscalId;
+        if (!userStats[userId]) {
+          userStats[userId] = { absoluteTotal: 0, lastCompletion: null };
+        }
+        userStats[userId].absoluteTotal++;
+        if (company.fiscalCompletedAt) {
+          if (
+            !userStats[userId].lastCompletion ||
+            new Date(company.fiscalCompletedAt) >
+              new Date(userStats[userId].lastCompletion)
+          ) {
+            userStats[userId].lastCompletion = company.fiscalCompletedAt;
+          }
+        }
+      });
+
       fiscalUsers.forEach((fu) => {
         usersDataMap.set(fu.id, {
           id: fu.id,
@@ -1051,15 +1109,15 @@ module.exports = class CompanyController {
           completedCompanies: 0,
           nonCompletedCompanies: 0,
           zeroedCompanies: 0,
+          absoluteTotalAssigned: userStats[fu.id]?.absoluteTotal || 0,
+          lastCompletionDate: userStats[fu.id]?.lastCompletion || null,
         });
       });
 
-      // Busca as empresas que devem ser consideradas nas estatísticas
       const relevantCompanies = await Company.findAll({
         where: {
           status: "ATIVA",
           isArchived: false,
-          // Exclui da contagem as empresas que são "Zeradas" E "Sem Obrigações"
           [Op.not]: {
             [Op.and]: [
               { isZeroedFiscal: true },
@@ -1068,31 +1126,30 @@ module.exports = class CompanyController {
           },
         },
         attributes: [
-          "isZeroedFiscal", // CORRIGIDO: Usa o campo específico do fiscal
+          "isZeroedFiscal",
           "sentToClientFiscal",
           "declarationsCompletedFiscal",
+          "hasNoFiscalObligations",
           "respFiscalId",
         ],
         raw: true,
       });
 
-      let totalCompanies = relevantCompanies.length;
-      let zeroedCompaniesCount = 0; // Contador separado para zeradas totais (antes da exclusão)
+      let totalForCalculation = relevantCompanies.length; // Renomeado para clareza
       let completedCompanies = 0;
 
-      // Primeiro, contamos as zeradas de todas as empresas ativas para o card
-      const allActiveCompanies = await Company.findAll({
-        where: { status: "ATIVA", isArchived: false },
-        attributes: ["isZeroedFiscal"],
-        raw: true,
-      });
-      allActiveCompanies.forEach((c) => {
-        if (c.isZeroedFiscal) zeroedCompaniesCount++;
+      const zeroedCompaniesCount = await Company.count({
+        where: { status: "ATIVA", isArchived: false, isZeroedFiscal: true },
       });
 
       for (const company of relevantCompanies) {
-        const isCompleted =
-          company.sentToClientFiscal && company.declarationsCompletedFiscal;
+        let isCompleted = false;
+        if (company.isZeroedFiscal) {
+          isCompleted = company.declarationsCompletedFiscal;
+        } else {
+          isCompleted =
+            company.sentToClientFiscal && company.declarationsCompletedFiscal;
+        }
 
         if (isCompleted) {
           completedCompanies++;
@@ -1116,9 +1173,11 @@ module.exports = class CompanyController {
         return ud;
       });
 
+      // ALTERADO: Envia ambos os totais para o frontend
       res.status(200).json({
-        totalCompanies,
-        zeroedCompanies: zeroedCompaniesCount, // Usa a contagem total de zeradas
+        totalCompanies: totalForCalculation,
+        absoluteTotalForDept,
+        zeroedCompanies: zeroedCompaniesCount,
         completedCompanies,
         usersData,
       });
@@ -1146,12 +1205,47 @@ module.exports = class CompanyController {
         });
       }
 
+      // NOVO: Calcula o total absoluto de empresas ativas para o card principal
+      const absoluteTotalForDept = await Company.count({
+        where: { status: "ATIVA", isArchived: false },
+      });
+
       const dpUsers = await User.findAll({
         where: { department: "Pessoal" },
         attributes: ["id", "name"],
       });
 
       const usersDataMap = new Map();
+      const dpUserIds = dpUsers.map((u) => u.id);
+
+      const allActiveCompaniesForUsers = await Company.findAll({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          respDpId: { [Op.in]: dpUserIds },
+        },
+        attributes: ["respDpId", "dpCompletedAt"],
+        raw: true,
+      });
+
+      const userStats = {};
+      allActiveCompaniesForUsers.forEach((company) => {
+        const userId = company.respDpId;
+        if (!userStats[userId]) {
+          userStats[userId] = { absoluteTotal: 0, lastCompletion: null };
+        }
+        userStats[userId].absoluteTotal++;
+        if (company.dpCompletedAt) {
+          if (
+            !userStats[userId].lastCompletion ||
+            new Date(company.dpCompletedAt) >
+              new Date(userStats[userId].lastCompletion)
+          ) {
+            userStats[userId].lastCompletion = company.dpCompletedAt;
+          }
+        }
+      });
+
       dpUsers.forEach((dpUser) => {
         usersDataMap.set(dpUser.id, {
           id: dpUser.id,
@@ -1160,15 +1254,15 @@ module.exports = class CompanyController {
           completedCompanies: 0,
           nonCompletedCompanies: 0,
           zeroedCompanies: 0,
+          absoluteTotalAssigned: userStats[dpUser.id]?.absoluteTotal || 0,
+          lastCompletionDate: userStats[dpUser.id]?.lastCompletion || null,
         });
       });
 
-      // Busca considerando a nova regra de exclusão para o DP
       const relevantCompanies = await Company.findAll({
         where: {
           status: "ATIVA",
           isArchived: false,
-          // Exclui da contagem se (isZeroedDp E hasNoDpObligations) for TRUE
           [Op.not]: {
             [Op.and]: [{ isZeroedDp: true }, { hasNoDpObligations: true }],
           },
@@ -1177,22 +1271,28 @@ module.exports = class CompanyController {
           "isZeroedDp",
           "sentToClientDp",
           "declarationsCompletedDp",
+          "hasNoDpObligations",
           "respDpId",
         ],
         raw: true,
       });
 
-      let totalCompanies = relevantCompanies.length;
-      let zeroedCompanies = 0;
+      let totalForCalculation = relevantCompanies.length; // Renomeado para clareza
       let completedCompanies = 0;
 
-      for (const company of relevantCompanies) {
-        const isCompleted =
-          company.sentToClientDp && company.declarationsCompletedDp;
+      const zeroedCompaniesCount = await Company.count({
+        where: { status: "ATIVA", isArchived: false, isZeroedDp: true },
+      });
 
+      for (const company of relevantCompanies) {
+        let isCompleted = false;
         if (company.isZeroedDp) {
-          zeroedCompanies++;
+          isCompleted = company.declarationsCompletedDp;
+        } else {
+          isCompleted =
+            company.sentToClientDp && company.declarationsCompletedDp;
         }
+
         if (isCompleted) {
           completedCompanies++;
         }
@@ -1215,9 +1315,11 @@ module.exports = class CompanyController {
         return ud;
       });
 
+      // ALTERADO: Envia ambos os totais para o frontend
       res.status(200).json({
-        totalCompanies,
-        zeroedCompanies,
+        totalCompanies: totalForCalculation,
+        absoluteTotalForDept,
+        zeroedCompanies: zeroedCompaniesCount,
         completedCompanies,
         usersData,
       });
@@ -1257,23 +1359,40 @@ module.exports = class CompanyController {
     }
 
     try {
-      const whereClause = {
-        status: "ATIVA",
-        isArchived: false,
-        respDpId: targetUserId,
-      };
-
-      const totalCompanies = await Company.count({ where: whereClause });
-      const zeroedCompanies = await Company.count({
-        where: { ...whereClause, isZeroedDp: true },
-      });
-      const completedCompanies = await Company.count({
+      // REFATORADO: Usar findAll para aplicar a lógica complexa em JS.
+      const userCompanies = await Company.findAll({
         where: {
-          ...whereClause,
-          sentToClientDp: true,
-          declarationsCompletedDp: true,
+          status: "ATIVA",
+          isArchived: false,
+          respDpId: targetUserId,
+          // REGRA 3: Exclui empresas que são zeradas E sem obrigações
+          [Op.not]: {
+            [Op.and]: [{ isZeroedDp: true }, { hasNoDpObligations: true }],
+          },
         },
+        attributes: ["isZeroedDp", "sentToClientDp", "declarationsCompletedDp"],
+        raw: true,
       });
+
+      const totalCompanies = userCompanies.length;
+      let completedCompanies = 0;
+      let zeroedCompanies = 0;
+
+      // ALTERADO: Loop para aplicar a lógica de conclusão.
+      for (const company of userCompanies) {
+        if (company.isZeroedDp) {
+          zeroedCompanies++;
+          // REGRA 2: Zerada é concluída apenas com 'declarationsCompletedDp'
+          if (company.declarationsCompletedDp) {
+            completedCompanies++;
+          }
+        } else {
+          // REGRA 1: Não zerada precisa de ambos
+          if (company.sentToClientDp && company.declarationsCompletedDp) {
+            completedCompanies++;
+          }
+        }
+      }
 
       res.status(200).json({
         totalCompanies,
