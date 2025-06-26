@@ -63,12 +63,14 @@ const CompanyRoutes = require("./routes/CompanyRoutes");
 const AlertRoutes = require("./routes/AlertRoutes");
 const automationRoutes = require("./routes/AutomationRoutes");
 const AdminRoutes = require("./routes/AdminRoutes");
+const BonusRoutes = require("./routes/BonusRoutes");
 
 app.use("/", UserRoutes);
 app.use("/company", CompanyRoutes);
 app.use("/alerts", AlertRoutes);
 app.use("/automation", automationRoutes);
 app.use("/admin", AdminRoutes);
+app.use("/bonus", BonusRoutes);
 
 const errorHandler = require("./middlewares/errorHandler");
 app.use(errorHandler);

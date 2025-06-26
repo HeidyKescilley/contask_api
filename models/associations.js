@@ -7,6 +7,7 @@ const DpHistory = require("./DpHistory");
 const FiscalHistory = require("./FiscalHistory");
 const ContactMode = require("./ContactMode");
 const Automation = require("./Automation");
+const BonusResult = require("./BonusResult");
 
 // Associações entre User e Company
 User.hasMany(Company, {
@@ -83,3 +84,7 @@ Automation.belongsToMany(Company, {
   as: "companies",
   foreignKey: "automationId",
 });
+
+// Associação entre User e BonusResult
+User.hasMany(BonusResult, { foreignKey: "userId", as: "bonusResults" });
+BonusResult.belongsTo(User, { foreignKey: "userId", as: "user" });
