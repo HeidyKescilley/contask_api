@@ -13,7 +13,7 @@ module.exports = {
     try {
       logger.info(`Admin (${req.user.email}) solicitou todos os usuários.`);
       const users = await User.findAll({
-        attributes: ["id", "name", "department", "role"],
+        attributes: ["id", "name", "department", "role", "hasBonus"],
       });
       res.status(200).json({ users });
     } catch (error) {
@@ -294,6 +294,53 @@ module.exports = {
         { stack: error.stack }
       );
       res.status(500).json({ message: "Erro ao atualizar senha do usuário." });
+    }
+  },
+
+  toggleUserBonusStatus: async (req, res) => {
+    const userId = req.params.id;
+    const adminUser = req.user;
+
+    try {
+      const userToUpdate = await User.findByPk(userId);
+
+      if (!userToUpdate) {
+        logger.warn(
+          `Admin (${adminUser.email}) falhou ao tentar alterar status de bônus: Usuário não encontrado (ID: ${userId})`
+        );
+        return res.status(404).json({ message: "Usuário não encontrado." });
+      }
+
+      // Apenas usuários do Fiscal podem ter bônus neste contexto
+      if (userToUpdate.department !== "Fiscal") {
+        logger.warn(
+          `Admin (${adminUser.email}) tentou alterar status de bônus para usuário fora do Dpto. Fiscal (ID: ${userId})`
+        );
+        return res.status(400).json({
+          message:
+            "A elegibilidade de bônus só se aplica a usuários do Departamento Fiscal.",
+        });
+      }
+
+      userToUpdate.hasBonus = !userToUpdate.hasBonus;
+      await userToUpdate.save();
+
+      logger.info(
+        `Status de bônus do usuário ${userToUpdate.email} (ID: ${userId}) alterado para ${userToUpdate.hasBonus} por Admin (${adminUser.email}).`
+      );
+
+      res.status(200).json({
+        message: "Status de elegibilidade de bônus atualizado com sucesso.",
+        user: { id: userToUpdate.id, hasBonus: userToUpdate.hasBonus }, // Retorna o novo estado
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao alterar status de bônus do usuário (ID: ${userId}) por Admin (${adminUser.email}): ${error.message}`,
+        { stack: error.stack }
+      );
+      res
+        .status(500)
+        .json({ message: "Erro ao atualizar o status de bônus do usuário." });
     }
   },
 };

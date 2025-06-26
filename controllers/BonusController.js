@@ -110,15 +110,17 @@ module.exports = class BonusController {
         where: { department: "Pessoal" },
         transaction,
       });
-      const fiscalUsers = await User.findAll({
-        where: { department: "Fiscal" },
+
+      // ALTERAÇÃO: Busca apenas usuários do fiscal que são elegíveis para bônus
+      const fiscalUsersEligible = await User.findAll({
+        where: { department: "Fiscal", hasBonus: true },
         transaction,
       });
 
       const allResults = [];
       const calculationDate = new Date();
 
-      // --- 4. CÁLCULO PARA DEPARTAMENTO PESSOAL ---
+      // --- 4. CÁLCULO PARA DEPARTAMENTO PESSOAL (Sem alteração) ---
       for (const user of dpUsers) {
         const companies = await Company.findAll({
           where: { respDpId: user.id, status: "ATIVA", isArchived: false },
@@ -153,56 +155,68 @@ module.exports = class BonusController {
       }
 
       // --- 5. CÁLCULO PARA DEPARTAMENTO FISCAL ---
-      // 5.1. Cálculos globais
-      const totalActiveCompaniesResult = await Company.count({
-        where: { status: "ATIVA", isArchived: false },
-        transaction,
-      });
-      const A = totalActiveCompaniesResult || 1; // Evitar divisão por zero
+      if (fiscalUsersEligible.length > 0) {
+        const eligibleFiscalUserIds = fiscalUsersEligible.map((u) => u.id);
 
-      const fiscalUserIds = fiscalUsers.map((u) => u.id);
-      const totalBonusValueResult = await Company.sum("bonusValue", {
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          respFiscalId: { [Op.in]: fiscalUserIds },
-        },
-        transaction,
-      });
-      const B = totalBonusValueResult || 1; // Evitar divisão por zero
-
-      const C = VALOR_BASE_C_FISCAL;
-
-      const D = C / B + C * 0.05; // Quociente de Multiplicação dos bonus
-      const E = C / A; // Quociente de Multiplicação dos bonus por empresa
-
-      // 5.2. Cálculo por funcionário Fiscal
-      for (const user of fiscalUsers) {
-        const companies = await Company.findAll({
-          where: { respFiscalId: user.id, status: "ATIVA", isArchived: false },
+        // ALTERAÇÃO: O total 'A' agora considera apenas empresas dos usuários elegíveis.
+        const totalActiveCompaniesResult = await Company.count({
+          where: {
+            status: "ATIVA",
+            isArchived: false,
+            respFiscalId: { [Op.in]: eligibleFiscalUserIds },
+          },
           transaction,
         });
-        let totalBonus = 0;
-        const details = [];
+        const A = totalActiveCompaniesResult || 1;
 
-        for (const company of companies) {
-          const companyBonusValue = company.bonusValue || 0; // Nota de 1 a 5
-          const calculatedBonus = companyBonusValue * D + E;
-          totalBonus += calculatedBonus;
-          details.push({
-            companyName: company.name,
-            bonusValue: companyBonusValue,
-            bonus: calculatedBonus,
+        // ALTERAÇÃO: A soma 'B' também considera apenas empresas dos usuários elegíveis.
+        const totalBonusValueResult = await Company.sum("bonusValue", {
+          where: {
+            status: "ATIVA",
+            isArchived: false,
+            respFiscalId: { [Op.in]: eligibleFiscalUserIds },
+          },
+          transaction,
+        });
+        const B = totalBonusValueResult || 1;
+
+        const C = VALOR_BASE_C_FISCAL;
+
+        const D = (B > 0 ? C / B : 0) + C * 0.05;
+        const E = A > 0 ? C / A : 0;
+
+        // ALTERAÇÃO: Loop itera apenas sobre os usuários elegíveis.
+        for (const user of fiscalUsersEligible) {
+          const companies = await Company.findAll({
+            where: {
+              respFiscalId: user.id,
+              status: "ATIVA",
+              isArchived: false,
+            },
+            transaction,
+          });
+          let totalBonus = 0;
+          const details = [];
+
+          for (const company of companies) {
+            const companyBonusValue = company.bonusValue || 0;
+            const calculatedBonus = companyBonusValue * D + E;
+            totalBonus += calculatedBonus;
+            details.push({
+              companyName: company.name,
+              bonusValue: companyBonusValue,
+              bonus: calculatedBonus,
+            });
+          }
+          allResults.push({
+            userId: user.id,
+            userName: user.name,
+            department: "Fiscal",
+            totalBonus,
+            details,
+            calculationDate,
           });
         }
-        allResults.push({
-          userId: user.id,
-          userName: user.name,
-          department: "Fiscal",
-          totalBonus,
-          details,
-          calculationDate,
-        });
       }
 
       // 6. Insere todos os resultados no banco
