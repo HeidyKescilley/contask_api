@@ -1,6 +1,7 @@
 // D:\ContHub\contask_api\controllers\AdminController.js
 const User = require("../models/User");
 const Company = require("../models/Company"); // Importa o modelo Company
+const { Op } = require("sequelize");
 const transporter = require("../services/emailService");
 const { suspendedCompaniesListTemplate } = require("../emails/templates");
 const formatDate = require("../helpers/format-date");
@@ -311,14 +312,14 @@ module.exports = {
         return res.status(404).json({ message: "Usuário não encontrado." });
       }
 
-      // Apenas usuários do Fiscal podem ter bônus neste contexto
-      if (userToUpdate.department !== "Fiscal") {
+      const allowedDepartments = ["Fiscal", "Pessoal", "Contábil"];
+      if (!allowedDepartments.includes(userToUpdate.department)) {
         logger.warn(
-          `Admin (${adminUser.email}) tentou alterar status de bônus para usuário fora do Dpto. Fiscal (ID: ${userId})`
+          `Admin (${adminUser.email}) tentou alterar status de bônus para usuário de departamento não elegível (${userToUpdate.department})`
         );
         return res.status(400).json({
           message:
-            "A elegibilidade de bônus só se aplica a usuários do Departamento Fiscal.",
+            "A elegibilidade de bônus só se aplica a usuários dos departamentos Fiscal, Pessoal ou Contábil.",
         });
       }
 
@@ -341,6 +342,134 @@ module.exports = {
       res
         .status(500)
         .json({ message: "Erro ao atualizar o status de bônus do usuário." });
+    }
+  },
+
+  getTeamViewData: async (req, res) => {
+    try {
+      const { department, userId } = req.query;
+      const whereClause = {
+        status: "ATIVA",
+        isArchived: false,
+      };
+
+      // Define o campo de responsabilidade com base no departamento selecionado
+      let responsibleField = null;
+      if (department === "Fiscal") {
+        responsibleField = "respFiscalId";
+      } else if (department === "Pessoal") {
+        responsibleField = "respDpId";
+      } else if (department === "Contábil") {
+        responsibleField = "respContabilId";
+      }
+
+      // Aplica o filtro de usuário ou de departamento
+      if (responsibleField) {
+        if (userId && userId !== "all") {
+          whereClause[responsibleField] = userId;
+        } else {
+          // Se for "todos" do departamento, busca todas que têm um responsável no setor
+          whereClause[responsibleField] = { [Op.ne]: null };
+        }
+      }
+
+      const includeClause = [
+        { model: User, as: "respFiscal", attributes: ["id", "name"] },
+        { model: User, as: "respDp", attributes: ["id", "name"] },
+        { model: User, as: "respContabil", attributes: ["id", "name"] },
+      ];
+
+      // Se um departamento específico foi selecionado, adiciona o filtro de nome "N/A"
+      if (department && department !== "all") {
+        let targetAlias = "";
+        if (department === "Fiscal") targetAlias = "respFiscal";
+        if (department === "Pessoal") targetAlias = "respDp";
+        if (department === "Contábil") targetAlias = "respContabil";
+
+        const targetInclude = includeClause.find(
+          (inc) => inc.as === targetAlias
+        );
+
+        if (targetInclude) {
+          // Adiciona a condição para o nome do usuário e torna a junção obrigatória
+          targetInclude.where = { name: { [Op.ne]: "N/A" } };
+          targetInclude.required = true;
+        }
+      }
+
+      const companies = await Company.findAll({
+        where: whereClause,
+        include: includeClause, // Usa a cláusula de inclusão modificada
+        order: [["name", "ASC"]],
+      });
+
+      res.status(200).json(companies);
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados para a Visão de Equipes: ${error.message}`,
+        { stack: error.stack }
+      );
+      res
+        .status(500)
+        .json({ message: "Ocorreu um erro ao buscar os dados das equipes." });
+    }
+  },
+
+  resetMonthlyAgentData: async (req, res) => {
+    try {
+      const adminUser = req.user;
+      logger.info(
+        `Admin (${adminUser.email}) iniciou o reset mensal dos dados de agentes.`
+      );
+
+      const fieldsToReset = {
+        // Fiscal
+        sentToClientFiscal: false,
+        declarationsCompletedFiscal: false,
+        isZeroedFiscal: false,
+        hasNoFiscalObligations: false,
+        fiscalCompletedAt: null,
+        // DP
+        sentToClientDp: false,
+        declarationsCompletedDp: false,
+        isZeroedDp: false,
+        hasNoDpObligations: false,
+        dpCompletedAt: null,
+        // Contábil (adicionado na última alteração, mas não usado)
+        sentToClientContabil: false,
+        declarationsCompletedContabil: false,
+        isZeroedContabil: false,
+        hasNoContabilObligations: false,
+        contabilCompletedAt: null,
+      };
+
+      const [affectedRows] = await Company.update(fieldsToReset, {
+        where: {
+          isArchived: false,
+        },
+      });
+
+      logger.info(
+        `Reset mensal concluído. ${affectedRows} empresas foram atualizadas.`
+      );
+
+      // Limpeza geral de caches para garantir que todos os usuários vejam os dados zerados
+      logger.info("Invalidando todos os caches 'my_companies_*' e dashboards.");
+      cacheUtils.invalidateCachesByPrefix("my_companies_");
+      cacheUtils.invalidateCachesByPrefix("dashboard_"); // Supondo que você possa ter caches de dashboard no futuro
+
+      // Recarregar o cache principal é uma boa prática após uma atualização em massa
+      await cacheUtils.reloadAllCompanies();
+
+      res.status(200).json({
+        message: `Ciclo mensal resetado com sucesso. ${affectedRows} empresas foram atualizadas.`,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao executar o reset mensal dos dados de agentes: ${error.message}`,
+        { stack: error.stack }
+      );
+      res.status(500).json({ message: "Ocorreu um erro ao resetar os dados." });
     }
   },
 };

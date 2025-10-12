@@ -69,7 +69,8 @@ const COMPANY_ATTRIBUTES = [
   "branchNumber",
   "bonusValue",
   "employeesCount",
-  "isHeadquarters", // Novos campos
+  "isHeadquarters",
+  "accountingMonthsCount",
   "isZeroedFiscal",
   "sentToClientFiscal",
   "declarationsCompletedFiscal",
@@ -264,6 +265,7 @@ module.exports = class CompanyController {
         isZeroedDp: false,
         bonusValue: null,
         employeesCount: null,
+        accountingMonthsCount: null,
       });
 
       await StatusHistory.create({
@@ -896,6 +898,15 @@ module.exports = class CompanyController {
         }
       }
 
+      // ---- LÓGICA PARA O DEPARTAMENTO CONTÁBIL ----
+      if (user.department === "Contábil" || user.role === "admin") {
+        if ("accountingMonthsCount" in agentData)
+          updatePayload.accountingMonthsCount =
+            agentData.accountingMonthsCount === ""
+              ? null
+              : parseInt(agentData.accountingMonthsCount, 10);
+      }
+
       // Simula o estado da empresa APÓS a atualização para checar as condições
       const potentialNewState = { ...previousState, ...updatePayload };
 
@@ -1114,16 +1125,12 @@ module.exports = class CompanyController {
         });
       });
 
-      const relevantCompanies = await Company.findAll({
+      // 1. A consulta agora busca TODAS as empresas ativas dos usuários, sem excluir as "zeradas sem obrigação".
+      const allCompaniesForUsers = await Company.findAll({
         where: {
           status: "ATIVA",
           isArchived: false,
-          [Op.not]: {
-            [Op.and]: [
-              { isZeroedFiscal: true },
-              { hasNoFiscalObligations: true },
-            ],
-          },
+          respFiscalId: { [Op.in]: fiscalUserIds },
         },
         attributes: [
           "isZeroedFiscal",
@@ -1135,34 +1142,44 @@ module.exports = class CompanyController {
         raw: true,
       });
 
-      let totalForCalculation = relevantCompanies.length; // Renomeado para clareza
+      let totalForCalculation = 0;
       let completedCompanies = 0;
 
       const zeroedCompaniesCount = await Company.count({
         where: { status: "ATIVA", isArchived: false, isZeroedFiscal: true },
       });
 
-      for (const company of relevantCompanies) {
-        let isCompleted = false;
-        if (company.isZeroedFiscal) {
-          isCompleted = company.declarationsCompletedFiscal;
-        } else {
-          isCompleted =
-            company.sentToClientFiscal && company.declarationsCompletedFiscal;
-        }
-
-        if (isCompleted) {
-          completedCompanies++;
-        }
-
+      // 2. O loop agora processa todas as empresas.
+      for (const company of allCompaniesForUsers) {
         const responsibleUser = usersDataMap.get(company.respFiscalId);
         if (responsibleUser) {
-          responsibleUser.totalCompaniesAssigned++;
-          if (isCompleted) {
-            responsibleUser.completedCompanies++;
-          }
+          // A contagem de zeradas para o usuário agora inclui TODAS as empresas marcadas como zeradas.
           if (company.isZeroedFiscal) {
             responsibleUser.zeroedCompanies++;
+          }
+
+          // A lógica para contagem de "carga de trabalho" (total e concluídas) é aplicada condicionalmente.
+          const isPartOfWorkload = !(
+            company.isZeroedFiscal && company.hasNoFiscalObligations
+          );
+
+          if (isPartOfWorkload) {
+            totalForCalculation++;
+            responsibleUser.totalCompaniesAssigned++;
+
+            let isCompleted = false;
+            if (company.isZeroedFiscal) {
+              isCompleted = company.declarationsCompletedFiscal;
+            } else {
+              isCompleted =
+                company.sentToClientFiscal &&
+                company.declarationsCompletedFiscal;
+            }
+
+            if (isCompleted) {
+              completedCompanies++;
+              responsibleUser.completedCompanies++;
+            }
           }
         }
       }
@@ -1259,13 +1276,12 @@ module.exports = class CompanyController {
         });
       });
 
-      const relevantCompanies = await Company.findAll({
+      // 1. A consulta agora busca TODAS as empresas ativas dos usuários.
+      const allCompaniesForUsers = await Company.findAll({
         where: {
           status: "ATIVA",
           isArchived: false,
-          [Op.not]: {
-            [Op.and]: [{ isZeroedDp: true }, { hasNoDpObligations: true }],
-          },
+          respDpId: { [Op.in]: dpUserIds },
         },
         attributes: [
           "isZeroedDp",
@@ -1277,34 +1293,41 @@ module.exports = class CompanyController {
         raw: true,
       });
 
-      let totalForCalculation = relevantCompanies.length; // Renomeado para clareza
+      let totalForCalculation = 0;
       let completedCompanies = 0;
 
       const zeroedCompaniesCount = await Company.count({
         where: { status: "ATIVA", isArchived: false, isZeroedDp: true },
       });
 
-      for (const company of relevantCompanies) {
-        let isCompleted = false;
-        if (company.isZeroedDp) {
-          isCompleted = company.declarationsCompletedDp;
-        } else {
-          isCompleted =
-            company.sentToClientDp && company.declarationsCompletedDp;
-        }
-
-        if (isCompleted) {
-          completedCompanies++;
-        }
-
+      // 2. O loop agora processa todas as empresas.
+      for (const company of allCompaniesForUsers) {
         const responsibleUser = usersDataMap.get(company.respDpId);
         if (responsibleUser) {
-          responsibleUser.totalCompaniesAssigned++;
-          if (isCompleted) {
-            responsibleUser.completedCompanies++;
-          }
           if (company.isZeroedDp) {
             responsibleUser.zeroedCompanies++;
+          }
+
+          const isPartOfWorkload = !(
+            company.isZeroedDp && company.hasNoDpObligations
+          );
+
+          if (isPartOfWorkload) {
+            totalForCalculation++;
+            responsibleUser.totalCompaniesAssigned++;
+
+            let isCompleted = false;
+            if (company.isZeroedDp) {
+              isCompleted = company.declarationsCompletedDp;
+            } else {
+              isCompleted =
+                company.sentToClientDp && company.declarationsCompletedDp;
+            }
+
+            if (isCompleted) {
+              completedCompanies++;
+              responsibleUser.completedCompanies++;
+            }
           }
         }
       }
@@ -1406,6 +1429,69 @@ module.exports = class CompanyController {
       );
       res.status(500).json({
         message: "Erro ao carregar dados do dashboard de 'Minhas Empresas'.",
+      });
+    }
+  }
+
+  static async getContabilDashboardGeneralData(req, res) {
+    try {
+      const user = req.user;
+      if (user.role !== "admin" && user.department !== "Contábil") {
+        logger.warn(
+          `Usuário (${user.email}) tentou acessar dashboard Contábil geral sem permissão.`
+        );
+        return res.status(403).json({
+          message:
+            "Acesso restrito ao departamento Contábil ou administradores.",
+        });
+      }
+
+      const contabilUsers = await User.findAll({
+        where: { department: "Contábil" },
+        attributes: ["id", "name"],
+      });
+
+      const usersDataMap = new Map();
+      contabilUsers.forEach((cu) => {
+        usersDataMap.set(cu.id, {
+          id: cu.id,
+          name: cu.name,
+          totalAccountingMonths: 0,
+          totalCompaniesAssigned: 0,
+        });
+      });
+
+      const relevantCompanies = await Company.findAll({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          respContabilId: { [Op.in]: contabilUsers.map((u) => u.id) },
+        },
+        attributes: ["respContabilId", "accountingMonthsCount"],
+        raw: true,
+      });
+
+      for (const company of relevantCompanies) {
+        const responsibleUser = usersDataMap.get(company.respContabilId);
+        if (responsibleUser) {
+          responsibleUser.totalCompaniesAssigned++;
+          responsibleUser.totalAccountingMonths +=
+            company.accountingMonthsCount || 0;
+        }
+      }
+
+      const usersData = Array.from(usersDataMap.values());
+
+      res.status(200).json({
+        usersData,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados gerais do dashboard contábil: ${error.message}`,
+        { stack: error.stack }
+      );
+      res.status(500).json({
+        message: "Erro ao buscar dados gerais do dashboard contábil.",
       });
     }
   }

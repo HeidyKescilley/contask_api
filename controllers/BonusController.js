@@ -13,6 +13,7 @@ const FACTOR_KEYS = {
   DP_FATOR_1: "dp_fator_1",
   DP_FATOR_2: "dp_fator_2",
   FISCAL_VALOR_BASE_C: "fiscal_valor_base_c",
+  CONTABIL_VALOR_MES: "contabil_valor_mes",
 };
 
 module.exports = class BonusController {
@@ -27,6 +28,7 @@ module.exports = class BonusController {
         [FACTOR_KEYS.DP_FATOR_1]: "0.00",
         [FACTOR_KEYS.DP_FATOR_2]: "0.00",
         [FACTOR_KEYS.FISCAL_VALOR_BASE_C]: "0.00",
+        [FACTOR_KEYS.CONTABIL_VALOR_MES]: "0.00",
       };
       factors.forEach((f) => {
         factorsMap[f.factorKey] = f.factorValue;
@@ -42,7 +44,8 @@ module.exports = class BonusController {
    * Atualiza os valores dos fatores de bônus no banco.
    */
   static async updateBonusFactors(req, res) {
-    const { dp_fator_1, dp_fator_2, fiscal_valor_base_c } = req.body;
+    const { dp_fator_1, dp_fator_2, fiscal_valor_base_c, contabil_valor_mes } =
+      req.body;
     try {
       const factorsToUpdate = [
         { factorKey: FACTOR_KEYS.DP_FATOR_1, factorValue: dp_fator_1 },
@@ -50,6 +53,10 @@ module.exports = class BonusController {
         {
           factorKey: FACTOR_KEYS.FISCAL_VALOR_BASE_C,
           factorValue: fiscal_valor_base_c,
+        },
+        {
+          factorKey: FACTOR_KEYS.CONTABIL_VALOR_MES,
+          factorValue: contabil_valor_mes,
         },
       ];
 
@@ -104,16 +111,20 @@ module.exports = class BonusController {
       const FATOR2_DP = factorsMap[FACTOR_KEYS.DP_FATOR_2] || 0;
       const VALOR_BASE_C_FISCAL =
         factorsMap[FACTOR_KEYS.FISCAL_VALOR_BASE_C] || 0;
+      const VALOR_MES_CONTABIL =
+        factorsMap[FACTOR_KEYS.CONTABIL_VALOR_MES] || 0;
 
-      // 3. Busca usuários de DP e Fiscal
-      const dpUsers = await User.findAll({
-        where: { department: "Pessoal" },
+      // 3. Busca usuários de DP, Fiscal e Contábil que são elegíveis
+      const dpUsersEligible = await User.findAll({
+        where: { department: "Pessoal", hasBonus: true },
         transaction,
       });
-
-      // ALTERAÇÃO: Busca apenas usuários do fiscal que são elegíveis para bônus
       const fiscalUsersEligible = await User.findAll({
         where: { department: "Fiscal", hasBonus: true },
+        transaction,
+      });
+      const contabilUsersEligible = await User.findAll({
+        where: { department: "Contábil", hasBonus: true },
         transaction,
       });
 
@@ -121,7 +132,7 @@ module.exports = class BonusController {
       const calculationDate = new Date();
 
       // --- 4. CÁLCULO PARA DEPARTAMENTO PESSOAL (Sem alteração) ---
-      for (const user of dpUsers) {
+      for (const user of dpUsersEligible) {
         const companies = await Company.findAll({
           where: { respDpId: user.id, status: "ATIVA", isArchived: false },
           transaction,
@@ -219,7 +230,42 @@ module.exports = class BonusController {
         }
       }
 
-      // 6. Insere todos os resultados no banco
+      // --- 6. CÁLCULO PARA DEPARTAMENTO CONTÁBIL ---
+      for (const user of contabilUsersEligible) {
+        const companies = await Company.findAll({
+          where: {
+            respContabilId: user.id,
+            status: "ATIVA",
+            isArchived: false,
+          },
+          transaction,
+        });
+
+        let totalBonus = 0;
+        const details = [];
+
+        for (const company of companies) {
+          const monthsCount = company.accountingMonthsCount || 0;
+          const companyBonus = monthsCount * VALOR_MES_CONTABIL;
+          totalBonus += companyBonus;
+          details.push({
+            companyName: company.name,
+            accountingMonthsCount: monthsCount,
+            bonus: companyBonus,
+          });
+        }
+
+        allResults.push({
+          userId: user.id,
+          userName: user.name,
+          department: "Contábil",
+          totalBonus,
+          details,
+          calculationDate,
+        });
+      }
+
+      // 7. Insere todos os resultados no banco
       if (allResults.length > 0) {
         await BonusResult.bulkCreate(allResults, { transaction });
       }

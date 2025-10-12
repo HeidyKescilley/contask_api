@@ -53,4 +53,18 @@ router.patch(
   AdminController.toggleUserBonusStatus
 );
 
+router.get(
+  "/team-view",
+  verifyAdmin,
+  activityLogger,
+  AdminController.getTeamViewData
+);
+
+router.post(
+  "/reset-agent-data",
+  verifyAdmin,
+  activityLogger,
+  AdminController.resetMonthlyAgentData
+);
+
 module.exports = router;

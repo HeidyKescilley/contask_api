@@ -108,4 +108,12 @@ router.get(
   CompanyController.getDpDashboardMyCompaniesData
 );
 
+// Rota para Dashboard Contábil
+router.get(
+  "/dashboard/contabil/general",
+  verifyToken,
+  activityLogger,
+  CompanyController.getContabilDashboardGeneralData
+);
+
 module.exports = router;

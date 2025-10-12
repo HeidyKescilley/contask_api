@@ -118,6 +118,11 @@ const Company = db.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    accountingMonthsCount: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+    },
     isHeadquarters: {
       type: DataTypes.BOOLEAN,
       allowNull: false,

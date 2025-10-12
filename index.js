@@ -76,7 +76,7 @@ const errorHandler = require("./middlewares/errorHandler");
 app.use(errorHandler);
 
 sequelize
-  .sync({ force: false, alter: false })
+  .sync({ alter: false })
   .then(() => {
     app.listen(process.env.PORT, process.env.HOST, () => {
       logger.info(
