@@ -6,6 +6,7 @@ const logger = require("./logger/logger"); // Importa o logger do Winston
 const activityLogger = require("./middlewares/activityLogger"); // Importa o middleware de activity logger
 require("./scheduler/suspendedCompaniesEmailScheduler");
 require("./scheduler/archiveCompaniesScheduler");
+require("./scheduler/birthdayScheduler");
 
 const app = express();
 

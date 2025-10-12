@@ -28,7 +28,11 @@ const suspendedEmailInternal = loadTemplate("suspendedEmailInternal");
 const suspendedCompaniesListTemplate = loadTemplate("suspendedCompaniesList");
 
 // Template para enviar senha alterada para usuarios
-const adminChangedPasswordEmailTemplate = loadTemplate("adminChangedPasswordEmail");
+const adminChangedPasswordEmailTemplate = loadTemplate(
+  "adminChangedPasswordEmail"
+);
+
+const birthdayNotificationTemplate = loadTemplate("birthdayNotification");
 
 module.exports = {
   activeTemplate,
@@ -40,4 +44,5 @@ module.exports = {
   suspendedEmailInternal,
   suspendedCompaniesListTemplate,
   adminChangedPasswordEmailTemplate,
+  birthdayNotificationTemplate,
 };

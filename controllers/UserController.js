@@ -20,7 +20,6 @@ module.exports = class UserController {
       confirmpassword,
       ramal,
     } = req.body;
-
     logger.info(`Tentativa de registro de usuário com email: ${email}`);
 
     // validações
@@ -58,13 +57,22 @@ module.exports = class UserController {
 
     // verifica se o usuário já existe
     const userExists = await User.findOne({ where: { email } });
-
     if (userExists) {
       logger.warn(`Registro falhou: Email já utilizado - ${email}`);
       return res
         .status(422)
         .json({ message: "Email já utilizado, tente outro" });
     }
+
+    // >>> INÍCIO DA NOVA ALTERAÇÃO <<<
+    // Analisa a string 'AAAA-MM-DD' manualmente para criar a data na hora local do servidor.
+    // Isso evita que o JavaScript interprete a data como UTC e cause o problema de fuso horário.
+    const parts = birthday.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // Mês em JavaScript é 0-11
+    const day = parseInt(parts[2], 10);
+    const localBirthday = new Date(year, month, day);
+    // >>> FIM DA NOVA ALTERAÇÃO <<<
 
     // cria a senha
     const salt = await bcrypt.genSalt(10);
@@ -74,13 +82,12 @@ module.exports = class UserController {
     const user = {
       name,
       email,
-      birthday,
+      birthday: localBirthday, // Usa a data local construída manualmente
       department,
       role: "not-validated",
       password: passwordHash,
       ramal,
     };
-
     try {
       await User.create(user);
       logger.info(`Usuário registrado com sucesso: ${email}`);
