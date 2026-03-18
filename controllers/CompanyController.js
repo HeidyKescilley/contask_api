@@ -1,18 +1,15 @@
-// D:\ContHub\contask_api\controllers\CompanyController.js
 const { Op } = require("sequelize");
 const cleanCNPJ = require("./../helpers/clean-cnpj");
 const Company = require("../models/Company");
 const StatusHistory = require("../models/StatusHistory");
 const User = require("../models/User");
-const transporter = require("../services/emailService");
 const {
   activeTemplate,
   closedTemplate,
   terminatedTemplate,
-  suspendedTemplate,
-  newCompanyTemplate,
   suspendedEmailClient,
   suspendedEmailInternal,
+  newCompanyTemplate,
 } = require("../emails/templates");
 const ContactMode = require("../models/ContactMode");
 const Automation = require("../models/Automation");
@@ -20,29 +17,14 @@ const getToken = require("../helpers/get-token");
 const formatDate = require("../helpers/format-date");
 const getUserByToken = require("../helpers/get-user-by-token");
 const logger = require("../logger/logger");
-
-// Importando node-cache
-const NodeCache = require("node-cache");
-// Cache com TTL de 15 minutos (900 segundos)
-const cache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
-
-// Funções auxiliares para lidar com cache
-async function getCompaniesFromCache(key, fetchFunction) {
-  let data = cache.get(key);
-  if (!data) {
-    const result = await fetchFunction(); // Converte para JSON puro
-    data = JSON.parse(JSON.stringify(result));
-    cache.set(key, data);
-  }
-  return data;
-}
-
-function invalidateCache(keys) {
-  keys.forEach((key) => cache.del(key));
-}
+const cacheManager = require("../utils/CacheManager");
+const { sendToAllUsers, sendToRecipients } = require("../utils/emailSender");
+const {
+  getDeptConfig,
+  getAllDeptConfigs,
+} = require("../config/departmentConfig");
 
 // Lista completa de atributos da Company para uso em findAll/findOne
-// Facilita a manutenção para garantir que todos os campos sejam incluídos.
 const COMPANY_ATTRIBUTES = [
   "id",
   "num",
@@ -83,116 +65,83 @@ const COMPANY_ATTRIBUTES = [
   "hasNoDpObligations",
 ];
 
-async function reloadAllCompanies() {
-  const fetchAllCompanies = async () => {
-    const companies = await Company.findAll({
-      where: { isArchived: false },
-      include: [
-        { model: User, as: "respFiscal", attributes: ["id", "name"] },
-        { model: User, as: "respDp", attributes: ["id", "name"] },
-        { model: User, as: "respContabil", attributes: ["id", "name"] },
-        { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
-      ],
-      attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
-    });
-    return JSON.parse(JSON.stringify(companies));
+// Includes padrão para queries de Company
+const STANDARD_INCLUDES = [
+  { model: User, as: "respFiscal", attributes: ["id", "name"] },
+  { model: User, as: "respDp", attributes: ["id", "name"] },
+  { model: User, as: "respContabil", attributes: ["id", "name"] },
+  { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
+];
+
+const USER_ONLY_INCLUDES = [
+  { model: User, as: "respFiscal", attributes: ["id", "name"] },
+  { model: User, as: "respDp", attributes: ["id", "name"] },
+  { model: User, as: "respContabil", attributes: ["id", "name"] },
+];
+
+// ===================== REGISTRO DOS CACHES =====================
+
+cacheManager.register("companies_all", async () => {
+  return Company.findAll({
+    include: STANDARD_INCLUDES,
+    attributes: COMPANY_ATTRIBUTES,
+  });
+});
+
+cacheManager.register("recent_companies", async () => {
+  return Company.findAll({
+    where: { isArchived: false },
+    include: USER_ONLY_INCLUDES,
+    order: [["createdAt", "DESC"]],
+    limit: 10,
+    attributes: ["id", "name", "contractInit"],
+  });
+});
+
+cacheManager.register("recent_active_companies", async () => {
+  return Company.findAll({
+    where: { status: "ATIVA", isArchived: false },
+    order: [["statusUpdatedAt", "DESC"]],
+    limit: 10,
+    attributes: ["id", "name", "status", "statusUpdatedAt"],
+  });
+});
+
+cacheManager.register("recent_status_changes", async () => {
+  return Company.findAll({
+    where: { status: { [Op.in]: ["SUSPENSA", "BAIXADA", "DISTRATO"] } },
+    order: [["statusUpdatedAt", "DESC"]],
+    limit: 10,
+    attributes: ["id", "name", "status", "statusUpdatedAt"],
+  });
+});
+
+function registerMyCompaniesCache(user) {
+  const key = `my_companies_${user.id}`;
+  const config = getDeptConfig(user.department);
+  if (!config) return key;
+
+  const whereClause = {
+    [config.responsibleField]: user.id,
+    isArchived: false,
   };
-  const allCompanies = await fetchAllCompanies();
-  cache.set("companies_all", allCompanies);
-  return allCompanies;
-}
 
-async function reloadRecentCompanies() {
-  const fetchRecent = async () => {
-    const companies = await Company.findAll({
-      where: { isArchived: false },
-      include: [
-        { model: User, as: "respFiscal", attributes: ["id", "name"] },
-        { model: User, as: "respDp", attributes: ["id", "name"] },
-        { model: User, as: "respContabil", attributes: ["id", "name"] },
-      ],
-      order: [["createdAt", "DESC"]],
-      limit: 10,
-      attributes: ["id", "name", "contractInit"],
-    });
-    return JSON.parse(JSON.stringify(companies));
-  };
-  const recentCompanies = await fetchRecent();
-  cache.set("recent_companies", recentCompanies);
-  return recentCompanies;
-}
-
-async function reloadRecentActiveCompanies() {
-  const fetchRecentActive = async () => {
-    const companies = await Company.findAll({
-      where: {
-        status: "ATIVA",
-        isArchived: false,
-      },
-      order: [["statusUpdatedAt", "DESC"]],
-      limit: 10,
-      attributes: ["id", "name", "status", "statusUpdatedAt"],
-    });
-    return JSON.parse(JSON.stringify(companies));
-  };
-  const recentActiveCompanies = await fetchRecentActive();
-  cache.set("recent_active_companies", recentActiveCompanies);
-  return recentActiveCompanies;
-}
-
-async function reloadRecentStatusChanges() {
-  const fetchRecentStatusChanges = async () => {
-    const companies = await Company.findAll({
-      where: {
-        status: {
-          [Op.in]: ["SUSPENSA", "BAIXADA", "DISTRATO"],
-        },
-      },
-      order: [["statusUpdatedAt", "DESC"]],
-      limit: 10,
-      attributes: ["id", "name", "status", "statusUpdatedAt"],
-    });
-    return JSON.parse(JSON.stringify(companies));
-  };
-  const recentStatusChanges = await fetchRecentStatusChanges();
-  cache.set("recent_status_changes", recentStatusChanges);
-  return recentStatusChanges;
-}
-
-async function reloadMyCompanies(userId) {
-  const user = await User.findByPk(userId);
-  let whereClause = {};
-
-  if (user.department === "Fiscal") {
-    whereClause.respFiscalId = user.id;
-  } else if (user.department === "Pessoal") {
-    whereClause.respDpId = user.id;
-  } else if (user.department === "Contábil") {
-    whereClause.respContabilId = user.id;
-  }
-
-  whereClause.isArchived = false;
-
-  const fetchMyCompanies = async () => {
-    const companies = await Company.findAll({
+  cacheManager.register(key, async () => {
+    return Company.findAll({
       where: whereClause,
-      include: [
-        { model: User, as: "respFiscal", attributes: ["id", "name"] },
-        { model: User, as: "respDp", attributes: ["id", "name"] },
-        { model: User, as: "respContabil", attributes: ["id", "name"] },
-        { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
-      ],
-      attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
+      include: STANDARD_INCLUDES,
+      attributes: COMPANY_ATTRIBUTES,
     });
-    return JSON.parse(JSON.stringify(companies));
-  };
+  });
 
-  const myCompanies = await fetchMyCompanies();
-  cache.set("my_companies_" + user.id, myCompanies);
-  return myCompanies;
+  return key;
 }
+
+// ===================== CONTROLLER =====================
 
 module.exports = class CompanyController {
+  // ==================== CRUD ====================
+
   static async addCompany(req, res) {
     try {
       const {
@@ -278,18 +227,8 @@ module.exports = class CompanyController {
         `Empresa criada com sucesso: ${name} (ID: ${newCompany.id}) por ${req.user.email}`
       );
 
-      await CompanyController.sendCompanyRegisteredEmails(newCompany); // Invalida caches
-
-      invalidateCache([
-        "companies_all",
-        "recent_companies",
-        "recent_active_companies",
-        "recent_status_changes",
-      ]); // Recarrega cache
-      await reloadAllCompanies();
-      await reloadRecentCompanies();
-      await reloadRecentActiveCompanies();
-      await reloadRecentStatusChanges();
+      await CompanyController.sendCompanyRegisteredEmails(newCompany);
+      await cacheManager.reloadAllGlobal();
 
       return res.status(201).json({
         message: "Empresa criada com sucesso.",
@@ -303,26 +242,14 @@ module.exports = class CompanyController {
 
   static async sendCompanyRegisteredEmails(company) {
     try {
-      const users = await User.findAll({ attributes: ["email"] });
-      const userEmails = users.map((user) => user.email);
-
       const companyData = company.get({ plain: true });
       if (companyData.contractInit) {
         companyData.contractInit = formatDate(companyData.contractInit);
       }
-
       const emailContent = newCompanyTemplate({ company: companyData });
-      const emailSubject = `Nova empresa cadastrada: ${company.name}`;
-
-      await transporter.sendMail({
-        from: '"Contask" <naoresponda@contelb.com.br>',
-        to: userEmails.join(","),
-        subject: emailSubject,
-        html: emailContent,
-      });
-
-      logger.info(
-        `Emails de registro de empresa enviados para ${userEmails.length} usuários.`
+      await sendToAllUsers(
+        `Nova empresa cadastrada: ${company.name}`,
+        emailContent
       );
     } catch (error) {
       logger.error(
@@ -333,7 +260,7 @@ module.exports = class CompanyController {
 
   static async editCompany(req, res) {
     const { id } = req.params;
-    const companyData = req.body; // companyData agora pode incluir isHeadquarters
+    const companyData = req.body;
 
     try {
       const company = await Company.findByPk(id);
@@ -346,7 +273,7 @@ module.exports = class CompanyController {
 
       logger.info(
         `Empresa (${company.name}, ID: ${id}) está sendo editada por ${req.user.email}`
-      ); // Sequelize atualiza os campos presentes em companyData, incluindo isHeadquarters
+      );
 
       await company.update(companyData);
 
@@ -358,18 +285,10 @@ module.exports = class CompanyController {
         `Empresa atualizada com sucesso: ${company.name} (ID: ${id})`
       );
 
-      invalidateCache([
-        "companies_all",
-        "recent_companies",
-        "my_companies_" + req.user.id,
-        "recent_status_changes",
-        "recent_active_companies",
-      ]);
-      await reloadAllCompanies();
-      await reloadRecentCompanies();
-      await reloadRecentActiveCompanies();
-      await reloadRecentStatusChanges();
-      await reloadMyCompanies(req.user.id);
+      await cacheManager.reloadAllGlobal();
+      cacheManager.invalidateByPrefix("my_companies_");
+      registerMyCompaniesCache(req.user);
+      await cacheManager.reloadMyCompanies(req.user.id);
 
       return res.status(200).json({
         message: "Empresa atualizada com sucesso.",
@@ -384,31 +303,7 @@ module.exports = class CompanyController {
   static async getAll(req, res) {
     try {
       logger.info(`Usuário (${req.user.email}) solicitou todas as empresas.`);
-
-      const fetchAllCompanies = async () => {
-        const companies = await Company.findAll({
-          where: { isArchived: false }, // Adicionado filtro de isArchived aqui
-          include: [
-            { model: User, as: "respFiscal", attributes: ["id", "name"] },
-            { model: User, as: "respDp", attributes: ["id", "name"] },
-            { model: User, as: "respContabil", attributes: ["id", "name"] },
-            {
-              model: ContactMode,
-              as: "contactMode",
-              attributes: ["id", "name"],
-            },
-          ],
-          attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
-        });
-        return JSON.parse(JSON.stringify(companies));
-      };
-
-      let allCompanies = cache.get("companies_all");
-      if (!allCompanies) {
-        allCompanies = await fetchAllCompanies();
-        cache.set("companies_all", allCompanies);
-      }
-
+      const allCompanies = await cacheManager.getOrFetch("companies_all");
       return res.status(200).json(allCompanies);
     } catch (error) {
       logger.error(`Erro ao buscar todas as empresas: ${error.message}`);
@@ -423,13 +318,15 @@ module.exports = class CompanyController {
       const company = await Company.findOne({
         where: { id, isArchived: false },
         include: [
-          { model: User, as: "respFiscal", attributes: ["id", "name"] },
-          { model: User, as: "respDp", attributes: ["id", "name"] },
-          { model: User, as: "respContabil", attributes: ["id", "name"] },
+          ...USER_ONLY_INCLUDES,
           { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
-          { model: Automation, as: "automations", attributes: ["id", "name"] },
+          {
+            model: Automation,
+            as: "automations",
+            attributes: ["id", "name"],
+          },
         ],
-        attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
+        attributes: COMPANY_ATTRIBUTES,
       });
 
       if (!company) {
@@ -446,15 +343,11 @@ module.exports = class CompanyController {
     }
   }
 
+  // ==================== STATUS ====================
+
   static async changeStatus(req, res) {
     const companyId = req.params.id;
-    const { newStatus } = req.body;
-    let statusDate; // Para DISTRATO, utiliza contractEndDate como data de encerramento do contrato
-    if (newStatus === "DISTRATO") {
-      statusDate = req.body.statusDate; // Corrigido para usar a data enviada pelo frontend
-    } else {
-      statusDate = req.body.statusDate;
-    } // Para SUSPENSA, captura o valor do débito
+    const { newStatus, statusDate, serviceEndDate } = req.body;
     let debitValue = null;
     if (newStatus === "SUSPENSA") {
       debitValue = req.body.debitValue;
@@ -485,28 +378,20 @@ module.exports = class CompanyController {
 
       logger.info(
         `Status da empresa alterado: ${company.name} para ${newStatus} por ${req.user.email}`
-      ); // Para DISTRATO, passa serviceEndDate; para SUSPENSA, passa debitValue
+      );
 
       await CompanyController.sendStatusChangeEmails(
         company,
         newStatus,
         statusDate,
-        req.body.serviceEndDate || null,
+        serviceEndDate || null,
         debitValue
       );
 
-      invalidateCache([
-        "companies_all",
-        "recent_companies",
-        "my_companies_" + req.user.id,
-        "recent_status_changes",
-        "recent_active_companies",
-      ]);
-      await reloadAllCompanies();
-      await reloadRecentCompanies();
-      await reloadRecentActiveCompanies();
-      await reloadRecentStatusChanges();
-      await reloadMyCompanies(req.user.id);
+      await cacheManager.reloadAllGlobal();
+      cacheManager.invalidateByPrefix("my_companies_");
+      registerMyCompaniesCache(req.user);
+      await cacheManager.reloadMyCompanies(req.user.id);
 
       return res
         .status(200)
@@ -526,122 +411,54 @@ module.exports = class CompanyController {
   ) {
     try {
       const companyName = company.name;
-      let emailContent;
-      let emailSubject = `${companyName} - Atualização de Status`;
+      const emailSubject = `${companyName} - Atualização de Status`;
+      const formattedDate = formatDate(date);
 
       if (newStatus === "ATIVA") {
-        const formatedDate = formatDate(date);
-        emailContent = activeTemplate({
+        const emailContent = activeTemplate({
           companyName,
           newStatus,
-          formatedDate,
+          formatedDate: formattedDate,
         });
-        const users = await User.findAll({ attributes: ["email"] });
-        const userEmails = users.map((user) => user.email);
-        await transporter.sendMail({
-          from: '"Contask" <naoresponda@contelb.com.br>',
-          to: userEmails.join(","),
-          subject: emailSubject,
-          html: emailContent,
-        });
+        await sendToAllUsers(emailSubject, emailContent);
       } else if (newStatus === "BAIXADA") {
-        const formatedDate = formatDate(date);
-        emailContent = closedTemplate({
+        const emailContent = closedTemplate({
           companyName,
           newStatus,
-          formatedDate,
+          formatedDate: formattedDate,
         });
-        const users = await User.findAll({ attributes: ["email"] });
-        const userEmails = users.map((user) => user.email);
-        await transporter.sendMail({
-          from: '"Contask" <naoresponda@contelb.com.br>',
-          to: userEmails.join(","),
-          subject: emailSubject,
-          html: emailContent,
-        });
+        await sendToAllUsers(emailSubject, emailContent);
       } else if (newStatus === "DISTRATO") {
-        const formattedContractEndDate = formatDate(date);
-        const formattedServiceEndDate = formatDate(serviceEndDate);
-        emailContent = terminatedTemplate({
+        const emailContent = terminatedTemplate({
           companyName,
-          contractEndDate: formattedContractEndDate,
-          serviceEndDate: formattedServiceEndDate,
+          contractEndDate: formattedDate,
+          serviceEndDate: formatDate(serviceEndDate),
         });
-        const users = await User.findAll({ attributes: ["email"] });
-        const userEmails = users.map((user) => user.email);
-        await transporter.sendMail({
-          from: '"Contask" <naoresponda@contelb.com.br>',
-          to: userEmails.join(","),
-          subject: emailSubject,
-          html: emailContent,
-        });
+        await sendToAllUsers(emailSubject, emailContent);
       } else if (newStatus === "SUSPENSA") {
-        const formattedDate = formatDate(date); // Enviar email interno para os usuários
+        // Email interno para os usuários
         const internalContent = suspendedEmailInternal({
           companyName,
           suspensionDate: formattedDate,
         });
-        const users = await User.findAll({ attributes: ["email"] });
-        const userEmails = users
-          .map((user) => user.email)
-          .filter((email) => email);
-        logger.info(`Internal email recipients: ${userEmails.join(",")}`);
-        if (userEmails.length > 0) {
-          await transporter.sendMail({
-            from: '"Contask" <naoresponda@contelb.com.br>',
-            to: userEmails.join(","),
-            subject: emailSubject,
-            html: internalContent,
-          });
-          logger.info(
-            `Email interno de suspensão enviado para ${userEmails.length} destinatários.`
-          );
-        } else {
-          logger.warn(
-            "Nenhum email interno encontrado para envio de suspensão."
-          );
-        } // Enviar email para o cliente, se houver e-mails cadastrados
+        await sendToAllUsers(emailSubject, internalContent);
+
+        // Email para o cliente
         if (company.email && company.email.trim() !== "") {
-          const companyEmails = company.email
-            .split(",")
-            .map((email) => email.trim())
-            .filter((email) => email);
-          logger.info(`Client email recipients: ${companyEmails.join(",")}`);
-          if (companyEmails.length > 0) {
-            const clientContent = suspendedEmailClient({
-              companyName,
-              debitValue,
-              suspensionDate: formattedDate,
-            });
-            await transporter.sendMail({
-              from: '"Contask" <naoresponda@contelb.com.br>',
-              to: companyEmails.join(","),
-              subject: emailSubject,
-              html: clientContent,
-            });
-            logger.info(
-              `Email de suspensão para o cliente enviado para: ${companyEmails.join(
-                ","
-              )}.`
-            );
-          } else {
-            logger.warn("Nenhum email de cliente válido encontrado.");
-          }
+          const clientContent = suspendedEmailClient({
+            companyName,
+            debitValue,
+            suspensionDate: formattedDate,
+          });
+          await sendToRecipients(company.email, emailSubject, clientContent);
         } else {
           logger.warn(
             "Email da empresa não informado para envio de notificação ao cliente."
           );
         }
       } else {
-        emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
-        const users = await User.findAll({ attributes: ["email"] });
-        const userEmails = users.map((user) => user.email);
-        await transporter.sendMail({
-          from: '"Contask" <naoresponda@contelb.com.br>',
-          to: userEmails.join(","),
-          subject: emailSubject,
-          html: emailContent,
-        });
+        const emailContent = `<p>O novo status da empresa <strong>${companyName}</strong> é <strong>${newStatus}</strong>.</p>`;
+        await sendToAllUsers(emailSubject, emailContent);
       }
     } catch (error) {
       logger.error(
@@ -669,32 +486,15 @@ module.exports = class CompanyController {
     }
   }
 
+  // ==================== RECENT DATA ====================
+
   static async getRecentStatusChanges(req, res) {
     try {
       logger.info(
         `Usuário (${req.user.email}) solicitou as últimas mudanças de status.`
       );
-
-      const fetchRecentStatusChanges = async () => {
-        const companies = await Company.findAll({
-          where: {
-            status: {
-              [Op.in]: ["SUSPENSA", "BAIXADA", "DISTRATO"],
-            },
-          },
-          order: [["statusUpdatedAt", "DESC"]],
-          limit: 10,
-          attributes: ["id", "name", "status", "statusUpdatedAt"],
-        });
-        return JSON.parse(JSON.stringify(companies));
-      };
-
-      let recentCompanies = cache.get("recent_status_changes");
-      if (!recentCompanies) {
-        recentCompanies = await fetchRecentStatusChanges();
-        cache.set("recent_status_changes", recentCompanies);
-      }
-      return res.status(200).json(recentCompanies);
+      const data = await cacheManager.getOrFetch("recent_status_changes");
+      return res.status(200).json(data);
     } catch (error) {
       logger.error(
         `Erro ao buscar mudanças recentes de status: ${error.message}`
@@ -708,27 +508,12 @@ module.exports = class CompanyController {
       logger.info(
         `Usuário (${req.user.email}) solicitou as últimas empresas ativas.`
       );
-
-      const fetchRecentActive = async () => {
-        const companies = await Company.findAll({
-          where: {
-            status: "ATIVA",
-          },
-          order: [["statusUpdatedAt", "DESC"]],
-          limit: 10,
-          attributes: ["id", "name", "status", "statusUpdatedAt"],
-        });
-        return JSON.parse(JSON.stringify(companies));
-      };
-
-      let recentActive = cache.get("recent_active_companies");
-      if (!recentActive) {
-        recentActive = await fetchRecentActive();
-        cache.set("recent_active_companies", recentActive);
-      }
-      return res.status(200).json(recentActive);
+      const data = await cacheManager.getOrFetch("recent_active_companies");
+      return res.status(200).json(data);
     } catch (error) {
-      logger.error(`Erro ao buscar empresas ativas recentes: ${error.message}`);
+      logger.error(
+        `Erro ao buscar empresas ativas recentes: ${error.message}`
+      );
       return res.status(500).json({ message: error.message });
     }
   }
@@ -738,87 +523,55 @@ module.exports = class CompanyController {
       logger.info(
         `Usuário (${req.user.email}) solicitou as últimas empresas adicionadas.`
       );
-
-      const fetchRecent = async () => {
-        const companies = await Company.findAll({
-          include: [
-            { model: User, as: "respFiscal", attributes: ["id", "name"] },
-            { model: User, as: "respDp", attributes: ["id", "name"] },
-            { model: User, as: "respContabil", attributes: ["id", "name"] },
-          ],
-          order: [["createdAt", "DESC"]],
-          limit: 10,
-          attributes: ["id", "name", "contractInit"],
-        });
-        return JSON.parse(JSON.stringify(companies));
-      };
-
-      let recent = cache.get("recent_companies");
-      if (!recent) {
-        recent = await fetchRecent();
-        cache.set("recent_companies", recent);
-      }
-      return res.status(200).json(recent);
+      const data = await cacheManager.getOrFetch("recent_companies");
+      return res.status(200).json(data);
     } catch (error) {
       logger.error(`Erro ao buscar empresas recentes: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
 
+  // ==================== MY COMPANIES ====================
+
   static async getMyCompanies(req, res) {
     try {
       const token = await getToken(req);
       const user = await getUserByToken(token);
 
-      let whereClause = {};
-
-      if (user.department === "Fiscal") {
-        whereClause.respFiscalId = user.id;
-      } else if (user.department === "Pessoal") {
-        whereClause.respDpId = user.id;
-      } else if (user.department === "Contábil") {
-        whereClause.respContabilId = user.id;
-      } else {
+      const config = getDeptConfig(user.department);
+      if (!config) {
         logger.warn(
           `Usuário (${user.email}) não pertence a nenhum departamento específico.`
         );
         return res.status(200).json([]);
       }
 
-      whereClause.isArchived = false;
-      whereClause.status = "ATIVA"; // Adicionado filtro padrão para "ATIVA" na visualização agente
-
-      const fetchMyCompanies = async () => {
-        const companies = await Company.findAll({
-          where: whereClause,
-          include: [
-            { model: User, as: "respFiscal", attributes: ["id", "name"] },
-            { model: User, as: "respDp", attributes: ["id", "name"] },
-            { model: User, as: "respContabil", attributes: ["id", "name"] },
-            {
-              model: ContactMode,
-              as: "contactMode",
-              attributes: ["id", "name"],
-            },
-          ],
-          attributes: COMPANY_ATTRIBUTES, // Usando a lista de atributos
-        });
-        return JSON.parse(JSON.stringify(companies));
+      const whereClause = {
+        [config.responsibleField]: user.id,
+        isArchived: false,
+        status: "ATIVA",
       };
 
-      const myCompaniesKey = "my_companies_" + user.id;
-      let companies = cache.get(myCompaniesKey);
-      if (!companies) {
-        companies = await fetchMyCompanies();
-        cache.set(myCompaniesKey, companies);
-      }
+      const myCompaniesKey = registerMyCompaniesCache(user);
 
+      // Registrar com filtro de status ATIVA para a view de agente
+      cacheManager.register(myCompaniesKey, async () => {
+        return Company.findAll({
+          where: whereClause,
+          include: STANDARD_INCLUDES,
+          attributes: COMPANY_ATTRIBUTES,
+        });
+      });
+
+      const companies = await cacheManager.getOrFetch(myCompaniesKey);
       return res.status(200).json(companies);
     } catch (error) {
       logger.error(`Erro ao buscar empresas do usuário: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
+
+  // ==================== AGENT DATA ====================
 
   static async updateAgentData(req, res) {
     const companyId = req.params.id;
@@ -840,125 +593,77 @@ module.exports = class CompanyController {
       );
 
       const updatePayload = {};
-      // Pega uma cópia do estado da empresa ANTES da atualização
       const previousState = company.get({ plain: true });
 
-      // ---- LÓGICA PARA O DEPARTAMENTO FISCAL ----
-      if (user.department === "Fiscal" || user.role === "admin") {
-        if ("sentToClientFiscal" in agentData)
-          updatePayload.sentToClientFiscal = agentData.sentToClientFiscal;
-        if ("declarationsCompletedFiscal" in agentData)
-          updatePayload.declarationsCompletedFiscal =
-            agentData.declarationsCompletedFiscal;
-        if ("bonusValue" in agentData)
-          updatePayload.bonusValue =
-            agentData.bonusValue === ""
+      // Loop genérico por departamento usando departmentConfig
+      for (const [deptName, config] of Object.entries(getAllDeptConfigs())) {
+        if (user.department !== deptName && user.role !== "admin") continue;
+
+        // Contábil: só tem bonusField (accountingMonthsCount)
+        if (config.bonusField && config.bonusField in agentData) {
+          updatePayload[config.bonusField] =
+            agentData[config.bonusField] === ""
               ? null
-              : parseInt(agentData.bonusValue, 10);
-        if ("isZeroedFiscal" in agentData) {
-          updatePayload.isZeroedFiscal = agentData.isZeroedFiscal;
-          if (agentData.isZeroedFiscal) {
-            updatePayload.sentToClientFiscal = false;
-            updatePayload.bonusValue = 1;
+              : parseInt(agentData[config.bonusField], 10);
+        }
+
+        // Departamentos com sentToClient/declarations (Fiscal e Pessoal)
+        if (!config.sentToClient) continue;
+
+        if (config.sentToClient in agentData)
+          updatePayload[config.sentToClient] = agentData[config.sentToClient];
+
+        if (config.declarationsCompleted in agentData)
+          updatePayload[config.declarationsCompleted] =
+            agentData[config.declarationsCompleted];
+
+        if (config.isZeroed in agentData) {
+          updatePayload[config.isZeroed] = agentData[config.isZeroed];
+          if (agentData[config.isZeroed]) {
+            updatePayload[config.sentToClient] = false;
+            updatePayload[config.bonusField] = config.zeroedBonusDefault;
           }
         }
-        if ("hasNoFiscalObligations" in agentData) {
-          updatePayload.hasNoFiscalObligations =
-            agentData.hasNoFiscalObligations;
-          if (agentData.hasNoFiscalObligations) {
-            updatePayload.declarationsCompletedFiscal = false;
+
+        if (config.hasNoObligations in agentData) {
+          updatePayload[config.hasNoObligations] =
+            agentData[config.hasNoObligations];
+          if (agentData[config.hasNoObligations]) {
+            updatePayload[config.declarationsCompleted] = false;
           }
         }
       }
 
-      // ---- LÓGICA PARA O DEPARTAMENTO PESSOAL ----
-      if (user.department === "Pessoal" || user.role === "admin") {
-        if ("sentToClientDp" in agentData)
-          updatePayload.sentToClientDp = agentData.sentToClientDp;
-        if ("declarationsCompletedDp" in agentData)
-          updatePayload.declarationsCompletedDp =
-            agentData.declarationsCompletedDp;
-        if ("employeesCount" in agentData)
-          updatePayload.employeesCount =
-            agentData.employeesCount === ""
-              ? null
-              : parseInt(agentData.employeesCount, 10);
-        if ("isZeroedDp" in agentData) {
-          updatePayload.isZeroedDp = agentData.isZeroedDp;
-          if (agentData.isZeroedDp) {
-            updatePayload.sentToClientDp = false;
-            updatePayload.employeesCount = 0;
-          }
-        }
-        if ("hasNoDpObligations" in agentData) {
-          updatePayload.hasNoDpObligations = agentData.hasNoDpObligations;
-          if (agentData.hasNoDpObligations) {
-            updatePayload.declarationsCompletedDp = false;
-          }
-        }
-      }
-
-      // ---- LÓGICA PARA O DEPARTAMENTO CONTÁBIL ----
-      if (user.department === "Contábil" || user.role === "admin") {
-        if ("accountingMonthsCount" in agentData)
-          updatePayload.accountingMonthsCount =
-            agentData.accountingMonthsCount === ""
-              ? null
-              : parseInt(agentData.accountingMonthsCount, 10);
-      }
-
-      // Simula o estado da empresa APÓS a atualização para checar as condições
+      // Lógica de timestamp de conclusão — loop genérico
       const potentialNewState = { ...previousState, ...updatePayload };
 
-      // --- LÓGICA DE TIMESTAMP DE CONCLUSÃO E LIMPEZA PARA O FISCAL ---
-      const isFiscalNormallyCompleted =
-        potentialNewState.sentToClientFiscal &&
-        potentialNewState.declarationsCompletedFiscal;
-      const isFiscalZeroedAndCompleted =
-        potentialNewState.isZeroedFiscal &&
-        potentialNewState.declarationsCompletedFiscal;
-      const isFiscalConsideredComplete =
-        isFiscalNormallyCompleted || isFiscalZeroedAndCompleted;
+      for (const config of Object.values(getAllDeptConfigs())) {
+        if (!config.completedAt) continue;
 
-      if (isFiscalConsideredComplete && !previousState.fiscalCompletedAt) {
-        // Se a condição de concluído foi atingida e não havia data, REGISTRA a data
-        updatePayload.fiscalCompletedAt = new Date();
-      } else if (
-        !isFiscalConsideredComplete &&
-        previousState.fiscalCompletedAt
-      ) {
-        // Se a condição de concluído não é mais válida e havia uma data, LIMPA a data
-        updatePayload.fiscalCompletedAt = null;
+        const isNormallyCompleted =
+          potentialNewState[config.sentToClient] &&
+          potentialNewState[config.declarationsCompleted];
+        const isZeroedAndCompleted =
+          potentialNewState[config.isZeroed] &&
+          potentialNewState[config.declarationsCompleted];
+        const isComplete = isNormallyCompleted || isZeroedAndCompleted;
+
+        if (isComplete && !previousState[config.completedAt]) {
+          updatePayload[config.completedAt] = new Date();
+        } else if (!isComplete && previousState[config.completedAt]) {
+          updatePayload[config.completedAt] = null;
+        }
       }
 
-      // --- LÓGICA DE TIMESTAMP DE CONCLUSÃO E LIMPEZA PARA O DP ---
-      const isDpNormallyCompleted =
-        potentialNewState.sentToClientDp &&
-        potentialNewState.declarationsCompletedDp;
-      const isDpZeroedAndCompleted =
-        potentialNewState.isZeroedDp &&
-        potentialNewState.declarationsCompletedDp;
-      const isDpConsideredComplete =
-        isDpNormallyCompleted || isDpZeroedAndCompleted;
-
-      if (isDpConsideredComplete && !previousState.dpCompletedAt) {
-        // Se a condição de concluído foi atingida e não havia data, REGISTRA a data
-        updatePayload.dpCompletedAt = new Date();
-      } else if (!isDpConsideredComplete && previousState.dpCompletedAt) {
-        // Se a condição de concluído não é mais válida e havia uma data, LIMPA a data
-        updatePayload.dpCompletedAt = null;
-      }
-
-      // Aplica todas as mudanças no banco de dados
       await company.update(updatePayload);
 
       logger.info(
         `Dados do agente para empresa ${company.name} (ID: ${companyId}) atualizados por ${user.email}.`
       );
 
-      // Invalida o cache para garantir que os dados sejam recarregados na próxima requisição
-      invalidateCache(["my_companies_" + user.id]);
-      await reloadMyCompanies(user.id);
+      cacheManager.invalidate(["my_companies_" + user.id]);
+      registerMyCompaniesCache(user);
+      await cacheManager.reloadMyCompanies(user.id);
 
       return res
         .status(200)
@@ -974,7 +679,164 @@ module.exports = class CompanyController {
     }
   }
 
-  static async getFiscalDashboardMyCompaniesData(req, res) {
+  // ==================== DASHBOARDS ====================
+
+  // Método privado unificado — Dashboard General (Fiscal e Pessoal)
+  static async _getDashboardGeneralData(req, res, departmentName) {
+    const config = getDeptConfig(departmentName);
+
+    try {
+      const user = req.user;
+      if (user.role !== "admin" && user.department !== departmentName) {
+        logger.warn(
+          `Usuário (${user.email}) tentou acessar dashboard ${departmentName} geral sem permissão.`
+        );
+        return res.status(403).json({
+          message: `Acesso restrito ao departamento ${departmentName} ou administradores.`,
+        });
+      }
+
+      const absoluteTotalForDept = await Company.count({
+        where: { status: "ATIVA", isArchived: false },
+      });
+
+      const deptUsers = await User.findAll({
+        where: { department: departmentName },
+        attributes: ["id", "name"],
+      });
+
+      const usersDataMap = new Map();
+      const deptUserIds = deptUsers.map((u) => u.id);
+
+      const allActiveCompaniesForUsers = await Company.findAll({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          [config.responsibleField]: { [Op.in]: deptUserIds },
+        },
+        attributes: [config.responsibleField, config.completedAt],
+        raw: true,
+      });
+
+      const userStats = {};
+      allActiveCompaniesForUsers.forEach((company) => {
+        const userId = company[config.responsibleField];
+        if (!userStats[userId]) {
+          userStats[userId] = { absoluteTotal: 0, lastCompletion: null };
+        }
+        userStats[userId].absoluteTotal++;
+        if (company[config.completedAt]) {
+          if (
+            !userStats[userId].lastCompletion ||
+            new Date(company[config.completedAt]) >
+              new Date(userStats[userId].lastCompletion)
+          ) {
+            userStats[userId].lastCompletion = company[config.completedAt];
+          }
+        }
+      });
+
+      deptUsers.forEach((u) => {
+        usersDataMap.set(u.id, {
+          id: u.id,
+          name: u.name,
+          totalCompaniesAssigned: 0,
+          completedCompanies: 0,
+          nonCompletedCompanies: 0,
+          zeroedCompanies: 0,
+          absoluteTotalAssigned: userStats[u.id]?.absoluteTotal || 0,
+          lastCompletionDate: userStats[u.id]?.lastCompletion || null,
+        });
+      });
+
+      const allCompaniesForUsers = await Company.findAll({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          [config.responsibleField]: { [Op.in]: deptUserIds },
+        },
+        attributes: [
+          config.isZeroed,
+          config.sentToClient,
+          config.declarationsCompleted,
+          config.hasNoObligations,
+          config.responsibleField,
+        ],
+        raw: true,
+      });
+
+      let totalForCalculation = 0;
+      let completedCompanies = 0;
+
+      const zeroedCompaniesCount = await Company.count({
+        where: {
+          status: "ATIVA",
+          isArchived: false,
+          [config.isZeroed]: true,
+        },
+      });
+
+      for (const company of allCompaniesForUsers) {
+        const responsibleUser = usersDataMap.get(
+          company[config.responsibleField]
+        );
+        if (responsibleUser) {
+          if (company[config.isZeroed]) {
+            responsibleUser.zeroedCompanies++;
+          }
+
+          const isPartOfWorkload = !(
+            company[config.isZeroed] && company[config.hasNoObligations]
+          );
+
+          if (isPartOfWorkload) {
+            totalForCalculation++;
+            responsibleUser.totalCompaniesAssigned++;
+
+            let isCompleted = false;
+            if (company[config.isZeroed]) {
+              isCompleted = company[config.declarationsCompleted];
+            } else {
+              isCompleted =
+                company[config.sentToClient] &&
+                company[config.declarationsCompleted];
+            }
+
+            if (isCompleted) {
+              completedCompanies++;
+              responsibleUser.completedCompanies++;
+            }
+          }
+        }
+      }
+
+      const usersData = Array.from(usersDataMap.values()).map((ud) => {
+        ud.nonCompletedCompanies =
+          ud.totalCompaniesAssigned - ud.completedCompanies;
+        return ud;
+      });
+
+      res.status(200).json({
+        totalCompanies: totalForCalculation,
+        absoluteTotalForDept,
+        zeroedCompanies: zeroedCompaniesCount,
+        completedCompanies,
+        usersData,
+      });
+    } catch (error) {
+      logger.error(
+        `Erro ao buscar dados gerais do dashboard ${departmentName}: ${error.message}`,
+        { stack: error.stack }
+      );
+      res.status(500).json({
+        message: `Erro ao buscar dados gerais do dashboard ${departmentName}.`,
+      });
+    }
+  }
+
+  // Método privado unificado — Dashboard My Companies (Fiscal e Pessoal)
+  static async _getDashboardMyCompaniesData(req, res, departmentName) {
+    const config = getDeptConfig(departmentName);
     const targetUserId = req.params.userId;
     const user = req.user;
 
@@ -987,35 +849,33 @@ module.exports = class CompanyController {
           "Você não tem permissão para acessar os dados de outro usuário.",
       });
     }
-    if (user.department !== "Fiscal" && user.role !== "admin") {
+
+    if (user.department !== departmentName && user.role !== "admin") {
       logger.warn(
-        `Usuário (${user.email}) tentou acessar dashboard 'Minhas Empresas' mas não é do departamento Fiscal.`
+        `Usuário (${user.email}) tentou acessar dashboard 'Minhas Empresas' mas não é do departamento ${departmentName}.`
       );
       return res.status(403).json({
-        message:
-          "Esta visualização é restrita a usuários do departamento Fiscal ou administradores.",
+        message: `Esta visualização é restrita a usuários do departamento ${departmentName} ou administradores.`,
       });
     }
 
     try {
-      // REFATORADO: Usar findAll para aplicar a lógica complexa em JS.
       const userCompanies = await Company.findAll({
         where: {
           status: "ATIVA",
           isArchived: false,
-          respFiscalId: targetUserId,
-          // REGRA 3: Exclui empresas que são zeradas E sem obrigações
+          [config.responsibleField]: targetUserId,
           [Op.not]: {
             [Op.and]: [
-              { isZeroedFiscal: true },
-              { hasNoFiscalObligations: true },
+              { [config.isZeroed]: true },
+              { [config.hasNoObligations]: true },
             ],
           },
         },
         attributes: [
-          "isZeroedFiscal",
-          "sentToClientFiscal",
-          "declarationsCompletedFiscal",
+          config.isZeroed,
+          config.sentToClient,
+          config.declarationsCompleted,
         ],
         raw: true,
       });
@@ -1024,19 +884,16 @@ module.exports = class CompanyController {
       let completedCompanies = 0;
       let zeroedCompanies = 0;
 
-      // ALTERADO: Loop para aplicar a lógica de conclusão.
       for (const company of userCompanies) {
-        if (company.isZeroedFiscal) {
+        if (company[config.isZeroed]) {
           zeroedCompanies++;
-          // REGRA 2: Zerada é concluída apenas com 'declarationsCompletedFiscal'
-          if (company.declarationsCompletedFiscal) {
+          if (company[config.declarationsCompleted]) {
             completedCompanies++;
           }
         } else {
-          // REGRA 1: Não zerada precisa de ambos
           if (
-            company.sentToClientFiscal &&
-            company.declarationsCompletedFiscal
+            company[config.sentToClient] &&
+            company[config.declarationsCompleted]
           ) {
             completedCompanies++;
           }
@@ -1050,7 +907,7 @@ module.exports = class CompanyController {
       });
     } catch (error) {
       logger.error(
-        `Erro ao buscar dados de 'Minhas Empresas' para o dashboard fiscal (User ID: ${targetUserId}): ${error.message}`,
+        `Erro ao buscar dados de 'Minhas Empresas' para o dashboard ${departmentName} (User ID: ${targetUserId}): ${error.message}`,
         { stack: error.stack }
       );
       res.status(500).json({
@@ -1059,380 +916,24 @@ module.exports = class CompanyController {
     }
   }
 
+  // Wrappers públicos — mantêm os endpoints existentes
   static async getFiscalDashboardGeneralData(req, res) {
-    try {
-      const user = req.user;
-      if (user.role !== "admin" && user.department !== "Fiscal") {
-        logger.warn(
-          `Usuário (${user.email}) tentou acessar dashboard fiscal geral sem permissão.`
-        );
-        return res.status(403).json({
-          message: "Acesso restrito ao departamento Fiscal ou administradores.",
-        });
-      }
-
-      // NOVO: Calcula o total absoluto de empresas ativas para o card principal
-      const absoluteTotalForDept = await Company.count({
-        where: { status: "ATIVA", isArchived: false },
-      });
-
-      const fiscalUsers = await User.findAll({
-        where: { department: "Fiscal" },
-        attributes: ["id", "name"],
-      });
-
-      const usersDataMap = new Map();
-      const fiscalUserIds = fiscalUsers.map((u) => u.id);
-
-      const allActiveCompaniesForUsers = await Company.findAll({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          respFiscalId: { [Op.in]: fiscalUserIds },
-        },
-        attributes: ["respFiscalId", "fiscalCompletedAt"],
-        raw: true,
-      });
-
-      const userStats = {};
-      allActiveCompaniesForUsers.forEach((company) => {
-        const userId = company.respFiscalId;
-        if (!userStats[userId]) {
-          userStats[userId] = { absoluteTotal: 0, lastCompletion: null };
-        }
-        userStats[userId].absoluteTotal++;
-        if (company.fiscalCompletedAt) {
-          if (
-            !userStats[userId].lastCompletion ||
-            new Date(company.fiscalCompletedAt) >
-              new Date(userStats[userId].lastCompletion)
-          ) {
-            userStats[userId].lastCompletion = company.fiscalCompletedAt;
-          }
-        }
-      });
-
-      fiscalUsers.forEach((fu) => {
-        usersDataMap.set(fu.id, {
-          id: fu.id,
-          name: fu.name,
-          totalCompaniesAssigned: 0,
-          completedCompanies: 0,
-          nonCompletedCompanies: 0,
-          zeroedCompanies: 0,
-          absoluteTotalAssigned: userStats[fu.id]?.absoluteTotal || 0,
-          lastCompletionDate: userStats[fu.id]?.lastCompletion || null,
-        });
-      });
-
-      // 1. A consulta agora busca TODAS as empresas ativas dos usuários, sem excluir as "zeradas sem obrigação".
-      const allCompaniesForUsers = await Company.findAll({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          respFiscalId: { [Op.in]: fiscalUserIds },
-        },
-        attributes: [
-          "isZeroedFiscal",
-          "sentToClientFiscal",
-          "declarationsCompletedFiscal",
-          "hasNoFiscalObligations",
-          "respFiscalId",
-        ],
-        raw: true,
-      });
-
-      let totalForCalculation = 0;
-      let completedCompanies = 0;
-
-      const zeroedCompaniesCount = await Company.count({
-        where: { status: "ATIVA", isArchived: false, isZeroedFiscal: true },
-      });
-
-      // 2. O loop agora processa todas as empresas.
-      for (const company of allCompaniesForUsers) {
-        const responsibleUser = usersDataMap.get(company.respFiscalId);
-        if (responsibleUser) {
-          // A contagem de zeradas para o usuário agora inclui TODAS as empresas marcadas como zeradas.
-          if (company.isZeroedFiscal) {
-            responsibleUser.zeroedCompanies++;
-          }
-
-          // A lógica para contagem de "carga de trabalho" (total e concluídas) é aplicada condicionalmente.
-          const isPartOfWorkload = !(
-            company.isZeroedFiscal && company.hasNoFiscalObligations
-          );
-
-          if (isPartOfWorkload) {
-            totalForCalculation++;
-            responsibleUser.totalCompaniesAssigned++;
-
-            let isCompleted = false;
-            if (company.isZeroedFiscal) {
-              isCompleted = company.declarationsCompletedFiscal;
-            } else {
-              isCompleted =
-                company.sentToClientFiscal &&
-                company.declarationsCompletedFiscal;
-            }
-
-            if (isCompleted) {
-              completedCompanies++;
-              responsibleUser.completedCompanies++;
-            }
-          }
-        }
-      }
-
-      const usersData = Array.from(usersDataMap.values()).map((ud) => {
-        ud.nonCompletedCompanies =
-          ud.totalCompaniesAssigned - ud.completedCompanies;
-        return ud;
-      });
-
-      // ALTERADO: Envia ambos os totais para o frontend
-      res.status(200).json({
-        totalCompanies: totalForCalculation,
-        absoluteTotalForDept,
-        zeroedCompanies: zeroedCompaniesCount,
-        completedCompanies,
-        usersData,
-      });
-    } catch (error) {
-      logger.error(
-        `Erro ao buscar dados gerais do dashboard fiscal: ${error.message}`,
-        { stack: error.stack }
-      );
-      res
-        .status(500)
-        .json({ message: "Erro ao buscar dados gerais do dashboard fiscal." });
-    }
+    return CompanyController._getDashboardGeneralData(req, res, "Fiscal");
   }
 
   static async getDpDashboardGeneralData(req, res) {
-    try {
-      const user = req.user;
-      if (user.role !== "admin" && user.department !== "Pessoal") {
-        logger.warn(
-          `Usuário (${user.email}) tentou acessar dashboard DP geral sem permissão.`
-        );
-        return res.status(403).json({
-          message:
-            "Acesso restrito ao departamento Pessoal ou administradores.",
-        });
-      }
+    return CompanyController._getDashboardGeneralData(req, res, "Pessoal");
+  }
 
-      // NOVO: Calcula o total absoluto de empresas ativas para o card principal
-      const absoluteTotalForDept = await Company.count({
-        where: { status: "ATIVA", isArchived: false },
-      });
-
-      const dpUsers = await User.findAll({
-        where: { department: "Pessoal" },
-        attributes: ["id", "name"],
-      });
-
-      const usersDataMap = new Map();
-      const dpUserIds = dpUsers.map((u) => u.id);
-
-      const allActiveCompaniesForUsers = await Company.findAll({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          respDpId: { [Op.in]: dpUserIds },
-        },
-        attributes: ["respDpId", "dpCompletedAt"],
-        raw: true,
-      });
-
-      const userStats = {};
-      allActiveCompaniesForUsers.forEach((company) => {
-        const userId = company.respDpId;
-        if (!userStats[userId]) {
-          userStats[userId] = { absoluteTotal: 0, lastCompletion: null };
-        }
-        userStats[userId].absoluteTotal++;
-        if (company.dpCompletedAt) {
-          if (
-            !userStats[userId].lastCompletion ||
-            new Date(company.dpCompletedAt) >
-              new Date(userStats[userId].lastCompletion)
-          ) {
-            userStats[userId].lastCompletion = company.dpCompletedAt;
-          }
-        }
-      });
-
-      dpUsers.forEach((dpUser) => {
-        usersDataMap.set(dpUser.id, {
-          id: dpUser.id,
-          name: dpUser.name,
-          totalCompaniesAssigned: 0,
-          completedCompanies: 0,
-          nonCompletedCompanies: 0,
-          zeroedCompanies: 0,
-          absoluteTotalAssigned: userStats[dpUser.id]?.absoluteTotal || 0,
-          lastCompletionDate: userStats[dpUser.id]?.lastCompletion || null,
-        });
-      });
-
-      // 1. A consulta agora busca TODAS as empresas ativas dos usuários.
-      const allCompaniesForUsers = await Company.findAll({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          respDpId: { [Op.in]: dpUserIds },
-        },
-        attributes: [
-          "isZeroedDp",
-          "sentToClientDp",
-          "declarationsCompletedDp",
-          "hasNoDpObligations",
-          "respDpId",
-        ],
-        raw: true,
-      });
-
-      let totalForCalculation = 0;
-      let completedCompanies = 0;
-
-      const zeroedCompaniesCount = await Company.count({
-        where: { status: "ATIVA", isArchived: false, isZeroedDp: true },
-      });
-
-      // 2. O loop agora processa todas as empresas.
-      for (const company of allCompaniesForUsers) {
-        const responsibleUser = usersDataMap.get(company.respDpId);
-        if (responsibleUser) {
-          if (company.isZeroedDp) {
-            responsibleUser.zeroedCompanies++;
-          }
-
-          const isPartOfWorkload = !(
-            company.isZeroedDp && company.hasNoDpObligations
-          );
-
-          if (isPartOfWorkload) {
-            totalForCalculation++;
-            responsibleUser.totalCompaniesAssigned++;
-
-            let isCompleted = false;
-            if (company.isZeroedDp) {
-              isCompleted = company.declarationsCompletedDp;
-            } else {
-              isCompleted =
-                company.sentToClientDp && company.declarationsCompletedDp;
-            }
-
-            if (isCompleted) {
-              completedCompanies++;
-              responsibleUser.completedCompanies++;
-            }
-          }
-        }
-      }
-
-      const usersData = Array.from(usersDataMap.values()).map((ud) => {
-        ud.nonCompletedCompanies =
-          ud.totalCompaniesAssigned - ud.completedCompanies;
-        return ud;
-      });
-
-      // ALTERADO: Envia ambos os totais para o frontend
-      res.status(200).json({
-        totalCompanies: totalForCalculation,
-        absoluteTotalForDept,
-        zeroedCompanies: zeroedCompaniesCount,
-        completedCompanies,
-        usersData,
-      });
-    } catch (error) {
-      logger.error(
-        `Erro ao buscar dados gerais do dashboard DP: ${error.message}`,
-        { stack: error.stack }
-      );
-      res
-        .status(500)
-        .json({ message: "Erro ao buscar dados gerais do dashboard DP." });
-    }
+  static async getFiscalDashboardMyCompaniesData(req, res) {
+    return CompanyController._getDashboardMyCompaniesData(req, res, "Fiscal");
   }
 
   static async getDpDashboardMyCompaniesData(req, res) {
-    const targetUserId = req.params.userId;
-    const user = req.user;
-
-    if (user.id != targetUserId && user.role !== "admin") {
-      logger.warn(
-        `Usuário (${user.email}) tentou acessar dashboard de 'Minhas Empresas' de outro usuário (${targetUserId}) sem permissão.`
-      );
-      return res.status(403).json({
-        message:
-          "Você não tem permissão para acessar os dados de outro usuário.",
-      });
-    }
-
-    if (user.department !== "Pessoal" && user.role !== "admin") {
-      logger.warn(
-        `Usuário (${user.email}) tentou acessar dashboard 'Minhas Empresas' mas não é do departamento Pessoal.`
-      );
-      return res.status(403).json({
-        message:
-          "Esta visualização é restrita a usuários do departamento Pessoal ou administradores.",
-      });
-    }
-
-    try {
-      // REFATORADO: Usar findAll para aplicar a lógica complexa em JS.
-      const userCompanies = await Company.findAll({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          respDpId: targetUserId,
-          // REGRA 3: Exclui empresas que são zeradas E sem obrigações
-          [Op.not]: {
-            [Op.and]: [{ isZeroedDp: true }, { hasNoDpObligations: true }],
-          },
-        },
-        attributes: ["isZeroedDp", "sentToClientDp", "declarationsCompletedDp"],
-        raw: true,
-      });
-
-      const totalCompanies = userCompanies.length;
-      let completedCompanies = 0;
-      let zeroedCompanies = 0;
-
-      // ALTERADO: Loop para aplicar a lógica de conclusão.
-      for (const company of userCompanies) {
-        if (company.isZeroedDp) {
-          zeroedCompanies++;
-          // REGRA 2: Zerada é concluída apenas com 'declarationsCompletedDp'
-          if (company.declarationsCompletedDp) {
-            completedCompanies++;
-          }
-        } else {
-          // REGRA 1: Não zerada precisa de ambos
-          if (company.sentToClientDp && company.declarationsCompletedDp) {
-            completedCompanies++;
-          }
-        }
-      }
-
-      res.status(200).json({
-        totalCompanies,
-        zeroedCompanies,
-        completedCompanies,
-      });
-    } catch (error) {
-      logger.error(
-        `Erro ao buscar dados de 'Minhas Empresas' para o dashboard DP (User ID: ${targetUserId}): ${error.message}`,
-        { stack: error.stack }
-      );
-      res.status(500).json({
-        message: "Erro ao carregar dados do dashboard de 'Minhas Empresas'.",
-      });
-    }
+    return CompanyController._getDashboardMyCompaniesData(req, res, "Pessoal");
   }
 
+  // Contábil tem lógica diferente (sem sentToClient/declarations)
   static async getContabilDashboardGeneralData(req, res) {
     try {
       const user = req.user;
@@ -1482,9 +983,7 @@ module.exports = class CompanyController {
 
       const usersData = Array.from(usersDataMap.values());
 
-      res.status(200).json({
-        usersData,
-      });
+      res.status(200).json({ usersData });
     } catch (error) {
       logger.error(
         `Erro ao buscar dados gerais do dashboard contábil: ${error.message}`,
@@ -1497,28 +996,8 @@ module.exports = class CompanyController {
   }
 };
 
-// Função para invalidar caches por prefixo, útil para "my_companies_USERID"update
-function invalidateCachesByPrefix(prefix) {
-  const keysToDelete = cache.keys().filter((key) => key.startsWith(prefix));
-  if (keysToDelete.length > 0) {
-    cache.del(keysToDelete); // node-cache del() pode aceitar um array de chaves
-    logger.info(
-      `Caches invalidados com prefixo '${prefix}': ${keysToDelete.join(", ")}`
-    );
-  } else {
-    logger.info(
-      `Nenhum cache encontrado com prefixo '${prefix}' para invalidar.`
-    );
-  }
-}
-
+// Exporta utilitários de cache para uso em outros controllers (AdminController, schedulers)
 module.exports.cacheUtils = {
-  cacheInstance: cache, // Exporta a instância do cache para acesso direto se necessário (ex: keys())
-  invalidateCache,
-  invalidateCachesByPrefix, // Nova função exportada
-  reloadAllCompanies,
-  reloadRecentCompanies,
-  reloadRecentActiveCompanies,
-  reloadRecentStatusChanges,
-  reloadMyCompanies,
+  cacheManager,
+  registerMyCompaniesCache,
 };

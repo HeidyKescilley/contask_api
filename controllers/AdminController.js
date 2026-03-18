@@ -1,13 +1,15 @@
-// D:\ContHub\contask_api\controllers\AdminController.js
 const User = require("../models/User");
-const Company = require("../models/Company"); // Importa o modelo Company
+const Company = require("../models/Company");
 const { Op } = require("sequelize");
-const transporter = require("../services/emailService");
-const { suspendedCompaniesListTemplate } = require("../emails/templates");
+const { suspendedCompaniesListTemplate, adminChangedPasswordEmailTemplate } = require("../emails/templates");
 const formatDate = require("../helpers/format-date");
 const logger = require("../logger/logger");
-const { cacheUtils } = require("./CompanyController");
+const cacheManager = require("../utils/CacheManager");
+const { sendToAllUsers, sendToRecipients } = require("../utils/emailSender");
+const { getDeptConfig } = require("../config/departmentConfig");
+const { cacheUtils: { registerMyCompaniesCache } } = require("./CompanyController");
 const bcrypt = require("bcrypt");
+const transporter = require("../services/emailService");
 
 module.exports = {
   getAllUsers: async (req, res) => {
@@ -87,7 +89,6 @@ module.exports = {
 
   sendSuspendedCompaniesEmailManual: async (req, res) => {
     try {
-      // Buscar empresas com status "SUSPENSA"
       const suspendedCompanies = await Company.findAll({
         where: { status: "SUSPENSA", isArchived: false },
         attributes: ["name", "statusUpdatedAt"],
@@ -98,7 +99,6 @@ module.exports = {
         statusUpdatedAt: formatDate(company.statusUpdatedAt),
       }));
 
-      // Obter a data atual formatada no padrão brasileiro
       const currentDate = new Date().toLocaleDateString("pt-BR");
 
       const emailContent = suspendedCompaniesListTemplate({
@@ -106,28 +106,17 @@ module.exports = {
         currentDate,
       });
 
-      // Buscar todos os emails dos usuários cadastrados
-      const users = await User.findAll({ attributes: ["email"] });
-      const userEmails = users
-        .map((user) => user.email)
-        .filter((email) => email);
+      const count = await sendToAllUsers(
+        "Lista de Empresas Suspensas - " + currentDate,
+        emailContent
+      );
 
-      if (userEmails.length === 0) {
+      if (count === 0) {
         return res
           .status(400)
           .json({ message: "Nenhum usuário encontrado para envio." });
       }
 
-      await transporter.sendMail({
-        from: '"Contask" <naoresponda@contelb.com.br>',
-        to: userEmails.join(","),
-        subject: "Lista de Empresas Suspensas - " + currentDate,
-        html: emailContent,
-      });
-
-      logger.info(
-        `Email manual de empresas suspensas enviado para ${userEmails.length} usuários.`
-      );
       return res.status(200).json({ message: "Email enviado com sucesso." });
     } catch (error) {
       logger.error(
@@ -162,53 +151,26 @@ module.exports = {
           .json({ message: "Empresa já se encontra arquivada." });
       }
 
-      // Opcional: Restringir o arquivamento manual apenas para status 'BAIXADA' ou 'DISTRATO'
-      // if (!['BAIXADA', 'DISTRATO'].includes(company.status)) {
-      //   logger.warn(`Arquivamento manual falhou: Status da empresa (ID: <span class="math-inline">\{companyId\}\) é '</span>{company.status}', não BAIXADA ou DISTRATO.`);
-      //   return res.status(400).json({ message: "A empresa precisa estar com status BAIXADA ou DISTRATO para ser arquivada manualmente desta forma." });
-      // }
-
       company.isArchived = true;
       await company.save();
 
       logger.info(
-        `Empresa ${company.name} (ID: <span class="math-inline">\{companyId\}\) arquivada manualmente por Admin \(</span>{req.user.email}).`
+        `Empresa ${company.name} (ID: ${companyId}) arquivada manualmente por Admin (${req.user.email}).`
       );
 
-      // INVALIDAR E RECARREGAR CACHES RELEVANTES
-      logger.info(
-        `Invalidando caches após arquivamento manual da empresa ID: ${companyId} por Admin (${req.user.email})`
-      );
-      const globalCacheKeys = [
-        "companies_all",
-        "recent_companies",
-        "recent_active_companies",
-        "recent_status_changes",
-      ];
-      cacheUtils.invalidateCache(globalCacheKeys);
-      logger.info(`Caches globais invalidados: ${globalCacheKeys.join(", ")}`);
+      cacheManager.invalidateByPrefix("my_companies_");
+      await cacheManager.reloadAllGlobal();
 
-      // Invalida todos os caches de "my_companies_*"
-      cacheUtils.invalidateCachesByPrefix("my_companies_");
-
-      // Recarrega caches globais
-      await cacheUtils.reloadAllCompanies();
-      await cacheUtils.reloadRecentCompanies();
-      await cacheUtils.reloadRecentActiveCompanies();
-      await cacheUtils.reloadRecentStatusChanges();
-
-      // Recarrega o cache "my_companies" do admin que realizou a ação, se ele tiver um ID de usuário
       if (req.user && req.user.id) {
-        await cacheUtils.reloadMyCompanies(req.user.id);
+        registerMyCompaniesCache(req.user);
+        await cacheManager.reloadMyCompanies(req.user.id);
         logger.info(
           `Cache 'my_companies_${req.user.id}' recarregado para o admin.`
         );
       }
-      // Os caches "my_companies_USERID" de outros usuários serão recarregados sob demanda (quando eles acessarem a página),
-      // pois seus caches específicos para essa chave foram deletados.
 
       logger.info(
-        `Caches principais recarregados e caches 'my_companies_*' invalidados após arquivamento manual da empresa ID: ${companyId}`
+        `Caches recarregados após arquivamento manual da empresa ID: ${companyId}`
       );
 
       return res
@@ -222,10 +184,11 @@ module.exports = {
       return res.status(500).json({ message: "Erro ao arquivar a empresa." });
     }
   },
+
   changeUserPasswordByAdmin: async (req, res) => {
     const userId = req.params.id;
     const { newPassword } = req.body;
-    const adminUser = req.user; // Usuário admin que está realizando a ação
+    const adminUser = req.user;
 
     if (!newPassword || newPassword.trim() === "") {
       logger.warn(
@@ -233,9 +196,6 @@ module.exports = {
       );
       return res.status(400).json({ message: "A nova senha é obrigatória." });
     }
-
-    // Opcional: Adicionar validação de complexidade da senha aqui, se desejado.
-    // Ex: if (newPassword.length < 8) return res.status(400).json({ message: "Senha muito curta."})
 
     try {
       const userToChange = await User.findByPk(userId);
@@ -247,8 +207,6 @@ module.exports = {
         return res.status(404).json({ message: "Usuário não encontrado." });
       }
 
-      // Gerar hash da nova senha
-      const bcrypt = require("bcrypt"); // Certifique-se que bcrypt está importado no topo do arquivo se já não estiver
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(newPassword, salt);
 
@@ -256,17 +214,14 @@ module.exports = {
       await userToChange.save();
 
       logger.info(
-        `Senha do usuário ${userToChange.email} (ID: <span class="math-inline">\{userId\}\) alterada com sucesso por Admin \(</span>{adminUser.email}).`
+        `Senha do usuário ${userToChange.email} (ID: ${userId}) alterada com sucesso por Admin (${adminUser.email}).`
       );
 
       // Enviar email para o usuário com a nova senha
       try {
-        const {
-          adminChangedPasswordEmailTemplate,
-        } = require("../emails/templates"); // Certifique-se que está importado no topo do arquivo
         const emailContent = adminChangedPasswordEmailTemplate({
           userName: userToChange.name,
-          newPassword: newPassword, // Enviando a senha em texto plano como solicitado
+          newPassword: newPassword,
         });
 
         await transporter.sendMail({
@@ -282,8 +237,6 @@ module.exports = {
         logger.error(
           `Erro ao enviar email de notificação de alteração de senha para ${userToChange.email}: ${emailError.message}`
         );
-        // Não retornar erro para o admin aqui, pois a senha JÁ FOI alterada.
-        // Apenas logar o erro do email.
       }
 
       res
@@ -291,7 +244,7 @@ module.exports = {
         .json({ message: "Senha do usuário atualizada com sucesso." });
     } catch (error) {
       logger.error(
-        `Erro ao alterar senha do usuário (ID: <span class="math-inline">\{userId\}\) por Admin \(</span>{adminUser.email}): ${error.message}`,
+        `Erro ao alterar senha do usuário (ID: ${userId}) por Admin (${adminUser.email}): ${error.message}`,
         { stack: error.stack }
       );
       res.status(500).json({ message: "Erro ao atualizar senha do usuário." });
@@ -332,7 +285,7 @@ module.exports = {
 
       res.status(200).json({
         message: "Status de elegibilidade de bônus atualizado com sucesso.",
-        user: { id: userToUpdate.id, hasBonus: userToUpdate.hasBonus }, // Retorna o novo estado
+        user: { id: userToUpdate.id, hasBonus: userToUpdate.hasBonus },
       });
     } catch (error) {
       logger.error(
@@ -353,23 +306,13 @@ module.exports = {
         isArchived: false,
       };
 
-      // Define o campo de responsabilidade com base no departamento selecionado
-      let responsibleField = null;
-      if (department === "Fiscal") {
-        responsibleField = "respFiscalId";
-      } else if (department === "Pessoal") {
-        responsibleField = "respDpId";
-      } else if (department === "Contábil") {
-        responsibleField = "respContabilId";
-      }
-
-      // Aplica o filtro de usuário ou de departamento
-      if (responsibleField) {
+      // Usa departmentConfig para mapear departamento → campo
+      const config = getDeptConfig(department);
+      if (config) {
         if (userId && userId !== "all") {
-          whereClause[responsibleField] = userId;
+          whereClause[config.responsibleField] = userId;
         } else {
-          // Se for "todos" do departamento, busca todas que têm um responsável no setor
-          whereClause[responsibleField] = { [Op.ne]: null };
+          whereClause[config.responsibleField] = { [Op.ne]: null };
         }
       }
 
@@ -380,18 +323,12 @@ module.exports = {
       ];
 
       // Se um departamento específico foi selecionado, adiciona o filtro de nome "N/A"
-      if (department && department !== "all") {
-        let targetAlias = "";
-        if (department === "Fiscal") targetAlias = "respFiscal";
-        if (department === "Pessoal") targetAlias = "respDp";
-        if (department === "Contábil") targetAlias = "respContabil";
-
+      if (config && department !== "all") {
         const targetInclude = includeClause.find(
-          (inc) => inc.as === targetAlias
+          (inc) => inc.as === config.responsibleAlias
         );
 
         if (targetInclude) {
-          // Adiciona a condição para o nome do usuário e torna a junção obrigatória
           targetInclude.where = { name: { [Op.ne]: "N/A" } };
           targetInclude.required = true;
         }
@@ -399,7 +336,7 @@ module.exports = {
 
       const companies = await Company.findAll({
         where: whereClause,
-        include: includeClause, // Usa a cláusula de inclusão modificada
+        include: includeClause,
         order: [["name", "ASC"]],
       });
 
@@ -435,7 +372,7 @@ module.exports = {
         isZeroedDp: false,
         hasNoDpObligations: false,
         dpCompletedAt: null,
-        // Contábil (adicionado na última alteração, mas não usado)
+        // Contábil
         sentToClientContabil: false,
         declarationsCompletedContabil: false,
         isZeroedContabil: false,
@@ -444,22 +381,18 @@ module.exports = {
       };
 
       const [affectedRows] = await Company.update(fieldsToReset, {
-        where: {
-          isArchived: false,
-        },
+        where: { isArchived: false },
       });
 
       logger.info(
         `Reset mensal concluído. ${affectedRows} empresas foram atualizadas.`
       );
 
-      // Limpeza geral de caches para garantir que todos os usuários vejam os dados zerados
       logger.info("Invalidando todos os caches 'my_companies_*' e dashboards.");
-      cacheUtils.invalidateCachesByPrefix("my_companies_");
-      cacheUtils.invalidateCachesByPrefix("dashboard_"); // Supondo que você possa ter caches de dashboard no futuro
+      cacheManager.invalidateByPrefix("my_companies_");
+      cacheManager.invalidateByPrefix("dashboard_");
 
-      // Recarregar o cache principal é uma boa prática após uma atualização em massa
-      await cacheUtils.reloadAllCompanies();
+      await cacheManager.reload("companies_all");
 
       res.status(200).json({
         message: `Ciclo mensal resetado com sucesso. ${affectedRows} empresas foram atualizadas.`,

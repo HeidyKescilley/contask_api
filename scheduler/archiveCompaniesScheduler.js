@@ -3,8 +3,8 @@ const cron = require("node-cron");
 const { Op } = require("sequelize");
 const Company = require("../models/Company");
 const logger = require("../logger/logger");
-const { subDays } = require("date-fns"); // Para cálculo de datas
-const { cacheUtils } = require("../controllers/CompanyController");
+const { subDays } = require("date-fns");
+const cacheManager = require("../utils/CacheManager");
 
 const archiveOldCompanies = async () => {
   logger.info(
@@ -20,7 +20,7 @@ const archiveOldCompanies = async () => {
         },
         isArchived: false,
         statusUpdatedAt: {
-          [Op.lt]: fortyFiveDaysAgo, // statusUpdatedAt é MENOR QUE (mais antigo que) 45 dias atrás
+          [Op.lt]: fortyFiveDaysAgo,
         },
       },
     });
@@ -40,30 +40,13 @@ const archiveOldCompanies = async () => {
       `${companiesToArchive.length} empresa(s) arquivada(s) com sucesso.`
     );
 
-    // INVALIDAR E RECARREGAR CACHES RELEVANTES
     if (companiesToArchive.length > 0) {
       logger.info(
         "Invalidando caches após arquivamento automático de empresas."
       );
-      const globalCacheKeys = [
-        "companies_all",
-        "recent_companies",
-        "recent_active_companies",
-        "recent_status_changes",
-      ];
-      cacheUtils.invalidateCache(globalCacheKeys);
-      logger.info(`Caches globais invalidados: ${globalCacheKeys.join(", ")}`);
 
-      // Invalida todos os caches de "my_companies_*"
-      // Isso garante que qualquer usuário que acesse "Minhas Empresas" buscará dados frescos.
-      cacheUtils.invalidateCachesByPrefix("my_companies_");
-
-      // Recarrega caches globais
-      await cacheUtils.reloadAllCompanies();
-      await cacheUtils.reloadRecentCompanies();
-      await cacheUtils.reloadRecentActiveCompanies();
-      await cacheUtils.reloadRecentStatusChanges();
-      // Os caches "my_companies_USERID" individuais serão recarregados sob demanda pelos respectivos usuários.
+      cacheManager.invalidateByPrefix("my_companies_");
+      await cacheManager.reloadAllGlobal();
 
       logger.info(
         "Caches principais recarregados e todos os caches 'my_companies_*' invalidados após arquivamento automático."
@@ -78,12 +61,12 @@ const archiveOldCompanies = async () => {
 
 // Agendar para rodar uma vez por dia, por exemplo, à 01:00 da manhã
 cron.schedule(
-  "0 1 * * *", // "0 1 * * *" significa: à 01:00 (1 da manhã) todos os dias
+  "0 1 * * *",
   () => {
     archiveOldCompanies();
   },
   {
-    timezone: "America/Sao_Paulo", // Ajuste o timezone conforme necessário
+    timezone: "America/Sao_Paulo",
   }
 );
 
@@ -91,4 +74,4 @@ logger.info(
   "Scheduler de arquivamento de empresas configurado para rodar diariamente à 01:00."
 );
 
-module.exports = archiveOldCompanies; // Exportar a função pode ser útil para chamadas manuais ou testes
+module.exports = archiveOldCompanies;
