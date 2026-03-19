@@ -5,6 +5,7 @@ const Company = require("../models/Company");
 const User = require("../models/User");
 const logger = require("../logger/logger");
 const { getDeptConfig } = require("../config/departmentConfig");
+const cacheManager = require("../utils/CacheManager");
 
 // ── Período atual (sempre mensal) ──────────────────────────────────────────────
 function getCurrentMonthPeriod(date = new Date()) {
@@ -77,6 +78,7 @@ module.exports = class TaxController {
         applicableUFs: applicableUFs || null,
       });
       logger.info(`Imposto "${name}" (${department}) criado por ${req.user?.name}`);
+      cacheManager.invalidateByPrefix("tax_dashboard");
       return res.status(201).json(tax);
     } catch (err) {
       logger.error(`TaxController.create: ${err.message}`);
@@ -93,6 +95,7 @@ module.exports = class TaxController {
       const updates = {};
       allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
       await tax.update(updates);
+      cacheManager.invalidateByPrefix("tax_dashboard");
       return res.json(tax);
     } catch (err) {
       logger.error(`TaxController.update: ${err.message}`);
@@ -106,6 +109,7 @@ module.exports = class TaxController {
       const tax = await CompanyTax.findByPk(req.params.id);
       if (!tax) return res.status(404).json({ message: "Imposto não encontrado." });
       await tax.destroy();
+      cacheManager.invalidateByPrefix("tax_dashboard");
       return res.json({ message: "Imposto excluído." });
     } catch (err) {
       logger.error(`TaxController.remove: ${err.message}`);
@@ -238,6 +242,7 @@ module.exports = class TaxController {
         completedAt: status === "completed" ? new Date() : null,
         completedById: status === "completed" ? (req.user?.id || null) : null,
       });
+      cacheManager.invalidateByPrefix("tax_dashboard");
       return res.json(record);
     } catch (err) {
       logger.error(`TaxController.updateStatus: ${err.message}`);
@@ -314,76 +319,117 @@ module.exports = class TaxController {
     try {
       const { department } = req.query;
       const period = req.query.period || getCurrentMonthPeriod();
-      const where = department ? { department } : {};
-      const taxes = await CompanyTax.findAll({ where, order: [["name", "ASC"]] });
-      if (taxes.length === 0) return res.json({ period, taxes: [], users: [], totalCompanies: 0 });
-
-      const companies = await Company.findAll({ where: { isArchived: false, status: "ATIVA" } });
-
-      // Usuários do departamento para breakdown por responsável
       const deptCfg = getDeptConfig(department);
-      const deptUsers = deptCfg
-        ? await User.findAll({ where: { department }, attributes: ["id", "name"], order: [["name", "ASC"]] })
-        : [];
-      const userStats = {};
-      for (const u of deptUsers) {
-        userStats[u.id] = { id: u.id, name: u.name, totalCompanies: 0, completedCompanies: 0, pendingCompanies: 0 };
-      }
+      const cacheKey = `tax_dashboard_${department || "all"}_${period}`;
 
-      const taxStats = {};
-      for (const tax of taxes) {
-        taxStats[tax.id] = { id: tax.id, name: tax.name, department: tax.department, total: 0, completed: 0, pending: 0, disabled: 0 };
-      }
+      const cachedData = await cacheManager.getOrFetch(cacheKey, async () => {
+        const where = department ? { department } : {};
 
-      for (const company of companies) {
-        const excludedStatuses = await CompanyTaxStatus.findAll({
-          where: { companyId: company.id, isManuallyExcluded: true },
-          attributes: ["taxId"],
-        });
-        const excludedIds = new Set(excludedStatuses.map((s) => s.taxId));
+        const [taxes, companies, deptUsers] = await Promise.all([
+          CompanyTax.findAll({ where, order: [["name", "ASC"]] }),
+          Company.findAll({
+            where: { isArchived: false, status: "ATIVA" },
+            attributes: ["id", "respFiscalId", "respDpId", "respContabilId", "isZeroedFiscal", "isZeroedDp", "rule", "classi", "uf"],
+            raw: true,
+          }),
+          deptCfg
+            ? User.findAll({ where: { department }, attributes: ["id", "name"], order: [["name", "ASC"]] })
+            : Promise.resolve([]),
+        ]);
 
-        const manualStatuses = await CompanyTaxStatus.findAll({
-          where: { companyId: company.id, isManuallyAssigned: true },
-          attributes: ["taxId"],
-        });
-        const manualIds = new Set(manualStatuses.map((s) => s.taxId));
+        if (taxes.length === 0) return { period, taxes: [], users: [], totalCompanies: 0 };
 
-        let companyActive = 0;
-        let companyPending = 0;
+        // 3 queries em batch substituindo N×M queries individuais
+        const [allStatuses, allExclusions, allManuals] = await Promise.all([
+          CompanyTaxStatus.findAll({
+            where: { period },
+            attributes: ["companyId", "taxId", "status"],
+            raw: true,
+          }),
+          CompanyTaxStatus.findAll({
+            where: { isManuallyExcluded: true },
+            attributes: ["companyId", "taxId"],
+            raw: true,
+          }),
+          CompanyTaxStatus.findAll({
+            where: { isManuallyAssigned: true },
+            attributes: ["companyId", "taxId"],
+            raw: true,
+          }),
+        ]);
 
+        // Maps para lookup O(1)
+        const statusMap = new Map();
+        for (const s of allStatuses) {
+          statusMap.set(`${s.companyId}_${s.taxId}`, s.status);
+        }
+        const excludedMap = new Map();
+        for (const e of allExclusions) {
+          if (!excludedMap.has(e.companyId)) excludedMap.set(e.companyId, new Set());
+          excludedMap.get(e.companyId).add(e.taxId);
+        }
+        const manualMap = new Map();
+        for (const m of allManuals) {
+          if (!manualMap.has(m.companyId)) manualMap.set(m.companyId, new Set());
+          manualMap.get(m.companyId).add(m.taxId);
+        }
+
+        const userStats = {};
+        for (const u of deptUsers) {
+          userStats[u.id] = { id: u.id, name: u.name, totalCompanies: 0, completedCompanies: 0, pendingCompanies: 0 };
+        }
+
+        const taxStats = {};
         for (const tax of taxes) {
-          if (excludedIds.has(tax.id)) continue;
-          if (!taxMatchesCompany(tax, company) && !manualIds.has(tax.id)) continue;
+          taxStats[tax.id] = { id: tax.id, name: tax.name, department: tax.department, total: 0, completed: 0, pending: 0, disabled: 0 };
+        }
 
-          const statusRecord = await getOrCreateTaxStatus(company, tax, period);
+        // Processamento in-memory — zero queries adicionais
+        for (const company of companies) {
+          const excludedIds = excludedMap.get(company.id) || new Set();
+          const manualIds = manualMap.get(company.id) || new Set();
+          let companyActive = 0;
+          let companyPending = 0;
 
-          taxStats[tax.id].total++;
-          if (statusRecord.status === "completed") taxStats[tax.id].completed++;
-          else if (statusRecord.status === "disabled") taxStats[tax.id].disabled++;
-          else { taxStats[tax.id].pending++; }
+          for (const tax of taxes) {
+            if (excludedIds.has(tax.id)) continue;
+            if (!taxMatchesCompany(tax, company) && !manualIds.has(tax.id)) continue;
 
-          if (statusRecord.status !== "disabled") {
-            companyActive++;
-            if (statusRecord.status === "pending") companyPending++;
+            let status = statusMap.get(`${company.id}_${tax.id}`);
+            // Sem registro: inferir status sem tocar o banco
+            if (status === undefined) {
+              status = isCompanyZeroedForDept(company, tax.department) ? "disabled" : "pending";
+            }
+
+            taxStats[tax.id].total++;
+            if (status === "completed") taxStats[tax.id].completed++;
+            else if (status === "disabled") taxStats[tax.id].disabled++;
+            else taxStats[tax.id].pending++;
+
+            if (status !== "disabled") {
+              companyActive++;
+              if (status === "pending") companyPending++;
+            }
+          }
+
+          const respId = deptCfg ? company[deptCfg.responsibleField] : null;
+          if (companyActive > 0 && respId && userStats[respId]) {
+            const u = userStats[respId];
+            u.totalCompanies++;
+            if (companyPending === 0) u.completedCompanies++;
+            else u.pendingCompanies++;
           }
         }
 
-        // Atribui ao responsável do departamento
-        const respId = deptCfg ? company[deptCfg.responsibleField] : null;
-        if (companyActive > 0 && respId && userStats[respId]) {
-          const u = userStats[respId];
-          u.totalCompanies++;
-          if (companyPending === 0) u.completedCompanies++;
-          else u.pendingCompanies++;
-        }
-      }
+        return {
+          period,
+          taxes: Object.values(taxStats),
+          users: Object.values(userStats).filter((u) => u.totalCompanies > 0),
+          totalCompanies: companies.length,
+        };
+      }); // end cacheManager.getOrFetch
 
-      return res.json({
-        period,
-        taxes: Object.values(taxStats),
-        users: Object.values(userStats).filter((u) => u.totalCompanies > 0),
-        totalCompanies: companies.length,
-      });
+      return res.json(cachedData);
     } catch (err) {
       logger.error(`TaxController.getDashboard: ${err.message}`);
       return res.status(500).json({ message: err.message });

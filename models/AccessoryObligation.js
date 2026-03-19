@@ -21,7 +21,7 @@ const AccessoryObligation = db.define("AccessoryObligation", {
     comment: "Dia do mês (1-31) ou número de dias úteis, dependendo de deadlineType",
   },
   deadlineType: {
-    type: DataTypes.ENUM("calendar_day", "business_days"),
+    type: DataTypes.ENUM("calendar_day", "business_days", "last_business_day"),
     allowNull: false,
     defaultValue: "calendar_day",
   },
@@ -29,6 +29,12 @@ const AccessoryObligation = db.define("AccessoryObligation", {
     type: DataTypes.ENUM("monthly", "biweekly", "annual"),
     allowNull: false,
     defaultValue: "monthly",
+  },
+  deadlineMonth: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 1, max: 12 },
+    comment: "Mês de vencimento (1-12), usado apenas quando periodicity=annual",
   },
   sendWhenZeroed: {
     type: DataTypes.BOOLEAN,

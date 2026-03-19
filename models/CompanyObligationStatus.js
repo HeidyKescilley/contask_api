@@ -48,6 +48,14 @@ const CompanyObligationStatus = db.define("CompanyObligationStatus", {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+}, {
+  indexes: [
+    { fields: ["companyId", "period"] },
+    { fields: ["obligationId", "period"] },
+    { fields: ["companyId", "isManuallyExcluded"] },
+    { fields: ["companyId", "isManuallyAssigned"] },
+    { unique: true, fields: ["companyId", "obligationId", "period"] },
+  ],
 });
 
 // Índice único: uma empresa não pode ter dois status para a mesma obrigação no mesmo período

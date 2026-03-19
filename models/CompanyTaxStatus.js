@@ -44,6 +44,14 @@ const CompanyTaxStatus = db.define("CompanyTaxStatus", {
     defaultValue: false,
     comment: "true = excluído manualmente para esta empresa (exceção)",
   },
+}, {
+  indexes: [
+    { fields: ["companyId", "period"] },
+    { fields: ["taxId", "period"] },
+    { fields: ["companyId", "isManuallyExcluded"] },
+    { fields: ["companyId", "isManuallyAssigned"] },
+    { unique: true, fields: ["companyId", "taxId", "period"] },
+  ],
 });
 
 module.exports = CompanyTaxStatus;

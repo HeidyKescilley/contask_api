@@ -71,19 +71,36 @@ function addBusinessDays(startDate, n, holidays) {
 }
 
 /**
+ * Retorna o último dia útil de um dado mês/ano.
+ * @param {number} year
+ * @param {number} month - 0-indexed (0=Jan, 11=Dec)
+ * @param {Set<string>} holidays
+ * @returns {Date}
+ */
+function getLastBusinessDay(year, month, holidays) {
+  // Último dia do mês: dia 0 do mês seguinte
+  let current = new Date(year, month + 1, 0);
+  while (!isBusinessDay(current, holidays)) {
+    current.setDate(current.getDate() - 1);
+  }
+  return current;
+}
+
+/**
  * Calcula a data limite de uma obrigação para um período.
- * @param {object} obligation - { deadline, deadlineType, periodicity }
+ * @param {object} obligation - { deadline, deadlineType, periodicity, deadlineMonth }
  * @param {string} period - "YYYY-MM" | "YYYY-MM-1" | "YYYY-MM-2" | "YYYY"
  * @returns {Promise<Date>}
  */
 async function getDeadlineDate(obligation, period) {
-  const { deadline, deadlineType, periodicity } = obligation;
+  const { deadline, deadlineType, periodicity, deadlineMonth } = obligation;
 
   let referenceDate;
 
   if (periodicity === "annual") {
-    // Período "YYYY" → começa em 1º de janeiro
-    referenceDate = new Date(`${period}-01-01`);
+    // Usa deadlineMonth se definido, senão janeiro
+    const month = deadlineMonth ? String(deadlineMonth).padStart(2, "0") : "01";
+    referenceDate = new Date(`${period}-${month}-01`);
   } else if (periodicity === "biweekly") {
     // Período "YYYY-MM-1" ou "YYYY-MM-2"
     const parts = period.split("-");
@@ -99,7 +116,12 @@ async function getDeadlineDate(obligation, period) {
     referenceDate = new Date(`${period}-01`);
   }
 
-  if (deadlineType === "calendar_day") {
+  if (deadlineType === "last_business_day") {
+    const year = referenceDate.getFullYear();
+    const month = referenceDate.getMonth();
+    const holidays = await getHolidays(year);
+    return getLastBusinessDay(year, month, holidays);
+  } else if (deadlineType === "calendar_day") {
     // Dia fixo do mês
     const year = referenceDate.getFullYear();
     const month = referenceDate.getMonth();
@@ -147,6 +169,7 @@ module.exports = {
   getHolidays,
   isBusinessDay,
   addBusinessDays,
+  getLastBusinessDay,
   getDeadlineDate,
   getCurrentPeriod,
   formatDeadline,

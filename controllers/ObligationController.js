@@ -10,6 +10,7 @@ const {
   getCurrentPeriod,
   formatDeadline,
 } = require("../utils/businessDays");
+const cacheManager = require("../utils/CacheManager");
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -81,18 +82,22 @@ module.exports = class ObligationController {
     try {
       const {
         name, description, department, deadline, deadlineType,
-        periodicity, sendWhenZeroed, applicableRegimes,
+        periodicity, deadlineMonth, sendWhenZeroed, applicableRegimes,
         applicableClassificacoes, applicableUFs,
       } = req.body;
 
-      if (!name || !department || !deadline || !deadlineType || !periodicity) {
-        return res.status(400).json({ message: "Campos obrigatórios: name, department, deadline, deadlineType, periodicity." });
+      if (!name || !department || !deadlineType || !periodicity) {
+        return res.status(400).json({ message: "Campos obrigatórios: name, department, deadlineType, periodicity." });
+      }
+      if (deadlineType !== "last_business_day" && !deadline) {
+        return res.status(400).json({ message: "Prazo é obrigatório para este tipo de deadline." });
       }
 
       const obligation = await AccessoryObligation.create({
         name, description, department,
-        deadline: parseInt(deadline, 10),
+        deadline: deadlineType === "last_business_day" ? 0 : parseInt(deadline, 10),
         deadlineType, periodicity,
+        deadlineMonth: periodicity === "annual" && deadlineMonth ? parseInt(deadlineMonth, 10) : null,
         sendWhenZeroed: sendWhenZeroed !== false,
         applicableRegimes: applicableRegimes || null,
         applicableClassificacoes: applicableClassificacoes || null,
@@ -100,6 +105,7 @@ module.exports = class ObligationController {
       });
 
       logger.info(`Obrigação "${name}" criada por ${req.user?.name}`);
+      cacheManager.invalidateByPrefix("obl_dashboard");
       return res.status(201).json(obligation);
     } catch (err) {
       logger.error(`ObligationController.create: ${err.message}`);
@@ -115,7 +121,7 @@ module.exports = class ObligationController {
 
       const allowed = [
         "name", "description", "department", "deadline", "deadlineType",
-        "periodicity", "sendWhenZeroed", "applicableRegimes",
+        "periodicity", "deadlineMonth", "sendWhenZeroed", "applicableRegimes",
         "applicableClassificacoes", "applicableUFs",
       ];
       const updates = {};
@@ -123,6 +129,7 @@ module.exports = class ObligationController {
 
       await obligation.update(updates);
       logger.info(`Obrigação ${req.params.id} atualizada por ${req.user?.name}`);
+      cacheManager.invalidateByPrefix("obl_dashboard");
       return res.json(obligation);
     } catch (err) {
       logger.error(`ObligationController.update: ${err.message}`);
@@ -138,6 +145,7 @@ module.exports = class ObligationController {
 
       await obligation.destroy(); // CASCADE apaga CompanyObligationStatus
       logger.info(`Obrigação ${req.params.id} excluída por ${req.user?.name}`);
+      cacheManager.invalidateByPrefix("obl_dashboard");
       return res.json({ message: "Obrigação excluída com sucesso." });
     } catch (err) {
       logger.error(`ObligationController.remove: ${err.message}`);
@@ -289,6 +297,7 @@ module.exports = class ObligationController {
         await statusRecord.update({ isManuallyAssigned: true });
       }
 
+      cacheManager.invalidateByPrefix("obl_dashboard");
       return res.json({ message: "Obrigação adicionada manualmente.", statusRecord });
     } catch (err) {
       logger.error(`ObligationController.toggleManual: ${err.message}`);
@@ -320,6 +329,7 @@ module.exports = class ObligationController {
       }
 
       await record.update(updates);
+      cacheManager.invalidateByPrefix("obl_dashboard");
       return res.json(record);
     } catch (err) {
       logger.error(`ObligationController.updateStatus: ${err.message}`);
@@ -420,93 +430,145 @@ module.exports = class ObligationController {
   static async getDashboard(req, res) {
     try {
       const { department = "Fiscal" } = req.query;
+      const periodParam = req.query.period || null;
 
-      const obligations = await AccessoryObligation.findAll({ where: { department } });
-      if (obligations.length === 0) {
-        return res.json({ period: null, obligations: [], users: [], totalCompanies: 0 });
-      }
+      // Mapa de campo responsável por departamento
+      const respFieldMap = { Fiscal: "respFiscalId", Pessoal: "respDpId", "Contábil": "respContabilId" };
+      const respField = respFieldMap[department] || "respFiscalId";
 
-      const period = req.query.period || getCurrentPeriod(obligations[0]);
-      // Somente empresas ATIVAS
-      const companies = await Company.findAll({ where: { isArchived: false, status: "ATIVA" } });
+      const cacheKey = `obl_dashboard_${department}_${periodParam || "current"}`;
+      const cachedData = await cacheManager.getOrFetch(cacheKey, async () => {
 
-      // Usuários do departamento Fiscal para breakdown por responsável
-      const fiscalUsers = await User.findAll({
-        where: { department: "Fiscal" },
-        attributes: ["id", "name"],
-        order: [["name", "ASC"]],
-      });
-      const userStats = {};
-      for (const u of fiscalUsers) {
-        userStats[u.id] = { id: u.id, name: u.name, totalCompanies: 0, completedCompanies: 0, pendingCompanies: 0 };
-      }
+        const [obligations, companies, deptUsers] = await Promise.all([
+          AccessoryObligation.findAll({ where: { department } }),
+          Company.findAll({
+            where: { isArchived: false, status: "ATIVA" },
+            attributes: ["id", "respFiscalId", "respDpId", "respContabilId", "isZeroedFiscal", "rule", "classi", "uf"],
+            raw: true,
+          }),
+          User.findAll({
+            where: { department },
+            attributes: ["id", "name"],
+            order: [["name", "ASC"]],
+          }),
+        ]);
 
-      // Métricas por obrigação
-      const obligationStats = {};
-      for (const obl of obligations) {
-        obligationStats[obl.id] = {
-          id: obl.id,
-          name: obl.name,
-          department: obl.department,
-          sendWhenZeroed: obl.sendWhenZeroed,
-          total: 0,
-          completed: 0,
-          pending: 0,
-          disabled: 0,
-        };
-      }
+        if (obligations.length === 0) {
+          return { period: null, obligations: [], users: [], totalCompanies: 0 };
+        }
 
-      for (const company of companies) {
-        const excludedStatuses = await CompanyObligationStatus.findAll({
-          where: { companyId: company.id, isManuallyExcluded: true },
-          attributes: ["obligationId"],
-        });
-        const excludedIds = new Set(excludedStatuses.map((s) => s.obligationId));
-
-        const manualStatuses = await CompanyObligationStatus.findAll({
-          where: { companyId: company.id, isManuallyAssigned: true },
-          attributes: ["obligationId"],
-        });
-        const manualIds = new Set(manualStatuses.map((s) => s.obligationId));
-
-        let companyActive = 0;
-        let companyPending = 0;
-
+        // Pré-computar período por obrigação (anuais podem ter período diferente de mensais)
+        const oblPeriods = {};
+        const periodSet = new Set();
         for (const obl of obligations) {
-          if (excludedIds.has(obl.id)) continue;
-          if (!obligationMatchesCompany(obl, company) && !manualIds.has(obl.id)) continue;
+          const p = periodParam || getCurrentPeriod(obl);
+          oblPeriods[obl.id] = p;
+          periodSet.add(p);
+        }
+        const mainPeriod = periodParam || getCurrentPeriod(obligations[0]);
 
-          const oblPeriod = req.query.period || getCurrentPeriod(obl);
-          const statusRecord = await getOrCreateStatus(company, obl, oblPeriod);
+        // 3 queries em batch substituindo N×M queries individuais
+        const [allStatuses, allExclusions, allManuals] = await Promise.all([
+          CompanyObligationStatus.findAll({
+            where: { period: { [Op.in]: [...periodSet] } },
+            attributes: ["companyId", "obligationId", "period", "status"],
+            raw: true,
+          }),
+          CompanyObligationStatus.findAll({
+            where: { isManuallyExcluded: true },
+            attributes: ["companyId", "obligationId"],
+            raw: true,
+          }),
+          CompanyObligationStatus.findAll({
+            where: { isManuallyAssigned: true },
+            attributes: ["companyId", "obligationId"],
+            raw: true,
+          }),
+        ]);
 
-          const stats = obligationStats[obl.id];
-          stats.total++;
-          if (statusRecord.status === "completed") stats.completed++;
-          else if (statusRecord.status === "disabled") stats.disabled++;
-          else stats.pending++;
+        // Maps para lookup O(1)
+        const statusMap = new Map();
+        for (const s of allStatuses) {
+          statusMap.set(`${s.companyId}_${s.obligationId}_${s.period}`, s.status);
+        }
+        const excludedMap = new Map();
+        for (const e of allExclusions) {
+          if (!excludedMap.has(e.companyId)) excludedMap.set(e.companyId, new Set());
+          excludedMap.get(e.companyId).add(e.obligationId);
+        }
+        const manualMap = new Map();
+        for (const m of allManuals) {
+          if (!manualMap.has(m.companyId)) manualMap.set(m.companyId, new Set());
+          manualMap.get(m.companyId).add(m.obligationId);
+        }
 
-          // Para breakdown por usuário: conta apenas obrigações ativas (não desabilitadas)
-          if (statusRecord.status !== "disabled") {
-            companyActive++;
-            if (statusRecord.status === "pending") companyPending++;
+        // Stats por usuário
+        const userStats = {};
+        for (const u of deptUsers) {
+          userStats[u.id] = { id: u.id, name: u.name, totalCompanies: 0, completedCompanies: 0, pendingCompanies: 0 };
+        }
+
+        // Stats por obrigação
+        const obligationStats = {};
+        for (const obl of obligations) {
+          obligationStats[obl.id] = {
+            id: obl.id, name: obl.name, department: obl.department,
+            sendWhenZeroed: obl.sendWhenZeroed,
+            total: 0, completed: 0, pending: 0, disabled: 0,
+          };
+        }
+
+        // Processamento in-memory — zero queries adicionais
+        for (const company of companies) {
+          const excludedIds = excludedMap.get(company.id) || new Set();
+          const manualIds = manualMap.get(company.id) || new Set();
+          let companyActive = 0;
+          let companyPending = 0;
+
+          for (const obl of obligations) {
+            if (excludedIds.has(obl.id)) continue;
+            if (!obligationMatchesCompany(obl, company) && !manualIds.has(obl.id)) continue;
+
+            const oblPeriod = oblPeriods[obl.id];
+            const statusKey = `${company.id}_${obl.id}_${oblPeriod}`;
+            let status = statusMap.get(statusKey);
+
+            // Sem registro: inferir status esperado sem tocar o banco
+            if (status === undefined) {
+              status = (!obl.sendWhenZeroed && company.isZeroedFiscal) ? "disabled" : "pending";
+            }
+
+            const stats = obligationStats[obl.id];
+            stats.total++;
+            if (status === "completed") stats.completed++;
+            else if (status === "disabled") stats.disabled++;
+            else stats.pending++;
+
+            if (status !== "disabled") {
+              companyActive++;
+              if (status === "pending") companyPending++;
+            }
+          }
+
+          // Atribui ao responsável do departamento
+          const userId = company[respField];
+          if (companyActive > 0 && userId && userStats[userId]) {
+            const u = userStats[userId];
+            u.totalCompanies++;
+            if (companyPending === 0) u.completedCompanies++;
+            else u.pendingCompanies++;
           }
         }
 
-        // Atribui ao responsável fiscal
-        if (companyActive > 0 && company.respFiscalId && userStats[company.respFiscalId]) {
-          const u = userStats[company.respFiscalId];
-          u.totalCompanies++;
-          if (companyPending === 0) u.completedCompanies++;
-          else u.pendingCompanies++;
-        }
-      }
+        return {
+          period: mainPeriod,
+          obligations: Object.values(obligationStats),
+          users: Object.values(userStats).filter((u) => u.totalCompanies > 0),
+          totalCompanies: companies.length,
+        };
+      }); // end cacheManager.getOrFetch
 
-      return res.json({
-        period,
-        obligations: Object.values(obligationStats),
-        users: Object.values(userStats).filter((u) => u.totalCompanies > 0),
-        totalCompanies: companies.length,
-      });
+      return res.json(cachedData);
     } catch (err) {
       logger.error(`ObligationController.getDashboard: ${err.message}`);
       return res.status(500).json({ message: err.message });

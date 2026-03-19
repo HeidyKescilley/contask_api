@@ -169,6 +169,12 @@ const Company = db.define(
   },
   {
     timestamps: true,
+    indexes: [
+      { fields: ["status", "isArchived"] },
+      { fields: ["respFiscalId"] },
+      { fields: ["respDpId"] },
+      { fields: ["respContabilId"] },
+    ],
   }
 );
 

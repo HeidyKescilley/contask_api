@@ -228,6 +228,8 @@ module.exports = class CompanyController {
 
       await CompanyController.sendCompanyRegisteredEmails(newCompany);
       await cacheManager.reloadAllGlobal();
+      cacheManager.invalidateByPrefix("dashboard_general_");
+      cacheManager.invalidateByPrefix("dashboard_my_companies_");
       // Aplica automaticamente obrigações e impostos que se encaixam nos filtros
       ObligationController.applyObligationsToCompany(newCompany).catch(() => {});
       TaxController.applyTaxesToCompany(newCompany).catch(() => {});
@@ -289,6 +291,8 @@ module.exports = class CompanyController {
 
       await cacheManager.reloadAllGlobal();
       cacheManager.invalidateByPrefix("my_companies_");
+      cacheManager.invalidateByPrefix("dashboard_general_");
+      cacheManager.invalidateByPrefix("dashboard_my_companies_");
       registerMyCompaniesCache(req.user);
       await cacheManager.reloadMyCompanies(req.user.id);
 
@@ -392,6 +396,8 @@ module.exports = class CompanyController {
 
       await cacheManager.reloadAllGlobal();
       cacheManager.invalidateByPrefix("my_companies_");
+      cacheManager.invalidateByPrefix("dashboard_general_");
+      cacheManager.invalidateByPrefix("dashboard_my_companies_");
       registerMyCompaniesCache(req.user);
       await cacheManager.reloadMyCompanies(req.user.id);
 
@@ -664,6 +670,7 @@ module.exports = class CompanyController {
       );
 
       cacheManager.invalidate(["my_companies_" + user.id]);
+      cacheManager.invalidateByPrefix("dashboard_my_companies_");
       registerMyCompaniesCache(user);
       await cacheManager.reloadMyCompanies(user.id);
 
@@ -697,6 +704,9 @@ module.exports = class CompanyController {
           message: `Acesso restrito ao departamento ${departmentName} ou administradores.`,
         });
       }
+
+      const cacheKey = `dashboard_general_${departmentName}`;
+      const cachedData = await cacheManager.getOrFetch(cacheKey, async () => {
 
       const absoluteTotalForDept = await Company.count({
         where: { status: "ATIVA", isArchived: false },
@@ -838,7 +848,7 @@ module.exports = class CompanyController {
         return ud;
       });
 
-      res.status(200).json({
+      return {
         totalCompanies: totalForCalculation,
         absoluteTotalForDept,
         zeroedCompanies: zeroedCompaniesCount,
@@ -846,7 +856,10 @@ module.exports = class CompanyController {
         sentCompanies: sentCompaniesCount,
         isFiscal: isFiscalDept,
         usersData,
-      });
+      };
+      }); // end cacheManager.getOrFetch
+
+      res.status(200).json(cachedData);
     } catch (error) {
       logger.error(
         `Erro ao buscar dados gerais do dashboard ${departmentName}: ${error.message}`,
@@ -885,67 +898,70 @@ module.exports = class CompanyController {
 
     try {
       const isFiscalDept = config.obligationsEnabled === true;
+      const cacheKey = `dashboard_my_companies_${departmentName}_${targetUserId}`;
 
-      const whereClause = {
-        status: "ATIVA",
-        isArchived: false,
-        [config.responsibleField]: targetUserId,
-      };
-
-      // Para DP/Contábil: exclui zeradas sem obrigações
-      if (!isFiscalDept && config.hasNoObligations) {
-        whereClause[Op.not] = {
-          [Op.and]: [
-            { [config.isZeroed]: true },
-            { [config.hasNoObligations]: true },
-          ],
+      const result = await cacheManager.getOrFetch(cacheKey, async () => {
+        const whereClause = {
+          status: "ATIVA",
+          isArchived: false,
+          [config.responsibleField]: targetUserId,
         };
-      }
 
-      const queryAttributes = [
-        config.isZeroed,
-        config.sentToClient,
-        !isFiscalDept && config.declarationsCompleted,
-      ].filter(Boolean);
-
-      const userCompanies = await Company.findAll({
-        where: whereClause,
-        attributes: queryAttributes,
-        raw: true,
-      });
-
-      const totalCompanies = userCompanies.length;
-      let completedCompanies = 0;
-      let zeroedCompanies = 0;
-
-      for (const company of userCompanies) {
-        if (company[config.isZeroed]) {
-          zeroedCompanies++;
+        // Para DP/Contábil: exclui zeradas sem obrigações
+        if (!isFiscalDept && config.hasNoObligations) {
+          whereClause[Op.not] = {
+            [Op.and]: [
+              { [config.isZeroed]: true },
+              { [config.hasNoObligations]: true },
+            ],
+          };
         }
 
-        let isCompleted = false;
-        if (isFiscalDept) {
-          isCompleted = !!company[config.sentToClient];
-        } else if (company[config.isZeroed]) {
-          isCompleted = !!company[config.declarationsCompleted];
-        } else {
-          isCompleted =
-            !!company[config.sentToClient] &&
-            !!company[config.declarationsCompleted];
+        const queryAttributes = [
+          config.isZeroed,
+          config.sentToClient,
+          !isFiscalDept && config.declarationsCompleted,
+        ].filter(Boolean);
+
+        const userCompanies = await Company.findAll({
+          where: whereClause,
+          attributes: queryAttributes,
+          raw: true,
+        });
+
+        const totalCompanies = userCompanies.length;
+        let completedCompanies = 0;
+        let zeroedCompanies = 0;
+
+        for (const company of userCompanies) {
+          if (company[config.isZeroed]) zeroedCompanies++;
+
+          let isCompleted = false;
+          if (isFiscalDept) {
+            isCompleted = !!company[config.sentToClient];
+          } else if (company[config.isZeroed]) {
+            isCompleted = !!company[config.declarationsCompleted];
+          } else {
+            isCompleted =
+              !!company[config.sentToClient] &&
+              !!company[config.declarationsCompleted];
+          }
+
+          if (isCompleted) completedCompanies++;
         }
 
-        if (isCompleted) completedCompanies++;
-      }
-
-      res.status(200).json({
-        totalCompanies,
-        zeroedCompanies,
-        completedCompanies,
-        sentCompanies: isFiscalDept
-          ? userCompanies.filter((c) => c[config.sentToClient]).length
-          : undefined,
-        isFiscal: isFiscalDept,
+        return {
+          totalCompanies,
+          zeroedCompanies,
+          completedCompanies,
+          sentCompanies: isFiscalDept
+            ? userCompanies.filter((c) => c[config.sentToClient]).length
+            : undefined,
+          isFiscal: isFiscalDept,
+        };
       });
+
+      res.status(200).json(result);
     } catch (error) {
       logger.error(
         `Erro ao buscar dados de 'Minhas Empresas' para o dashboard ${departmentName} (User ID: ${targetUserId}): ${error.message}`,
@@ -988,43 +1004,45 @@ module.exports = class CompanyController {
         });
       }
 
-      const contabilUsers = await User.findAll({
-        where: { department: "Contábil" },
-        attributes: ["id", "name"],
-      });
-
-      const usersDataMap = new Map();
-      contabilUsers.forEach((cu) => {
-        usersDataMap.set(cu.id, {
-          id: cu.id,
-          name: cu.name,
-          totalAccountingMonths: 0,
-          totalCompaniesAssigned: 0,
+      const cachedData = await cacheManager.getOrFetch("dashboard_general_Contábil", async () => {
+        const contabilUsers = await User.findAll({
+          where: { department: "Contábil" },
+          attributes: ["id", "name"],
         });
-      });
 
-      const relevantCompanies = await Company.findAll({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          respContabilId: { [Op.in]: contabilUsers.map((u) => u.id) },
-        },
-        attributes: ["respContabilId", "accountingMonthsCount"],
-        raw: true,
-      });
+        const usersDataMap = new Map();
+        contabilUsers.forEach((cu) => {
+          usersDataMap.set(cu.id, {
+            id: cu.id,
+            name: cu.name,
+            totalAccountingMonths: 0,
+            totalCompaniesAssigned: 0,
+          });
+        });
 
-      for (const company of relevantCompanies) {
-        const responsibleUser = usersDataMap.get(company.respContabilId);
-        if (responsibleUser) {
-          responsibleUser.totalCompaniesAssigned++;
-          responsibleUser.totalAccountingMonths +=
-            company.accountingMonthsCount || 0;
+        const relevantCompanies = await Company.findAll({
+          where: {
+            status: "ATIVA",
+            isArchived: false,
+            respContabilId: { [Op.in]: contabilUsers.map((u) => u.id) },
+          },
+          attributes: ["respContabilId", "accountingMonthsCount"],
+          raw: true,
+        });
+
+        for (const company of relevantCompanies) {
+          const responsibleUser = usersDataMap.get(company.respContabilId);
+          if (responsibleUser) {
+            responsibleUser.totalCompaniesAssigned++;
+            responsibleUser.totalAccountingMonths +=
+              company.accountingMonthsCount || 0;
+          }
         }
-      }
 
-      const usersData = Array.from(usersDataMap.values());
+        return { usersData: Array.from(usersDataMap.values()) };
+      });
 
-      res.status(200).json({ usersData });
+      res.status(200).json(cachedData);
     } catch (error) {
       logger.error(
         `Erro ao buscar dados gerais do dashboard contábil: ${error.message}`,
