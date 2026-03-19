@@ -18,6 +18,8 @@ const formatDate = require("../helpers/format-date");
 const getUserByToken = require("../helpers/get-user-by-token");
 const logger = require("../logger/logger");
 const cacheManager = require("../utils/CacheManager");
+const ObligationController = require("./ObligationController");
+const TaxController = require("./TaxController");
 const { sendToAllUsers, sendToRecipients } = require("../utils/emailSender");
 const {
   getDeptConfig,
@@ -55,13 +57,11 @@ const COMPANY_ATTRIBUTES = [
   "accountingMonthsCount",
   "isZeroedFiscal",
   "sentToClientFiscal",
-  "declarationsCompletedFiscal",
   "isZeroedDp",
   "sentToClientDp",
   "declarationsCompletedDp",
   "fiscalCompletedAt",
   "dpCompletedAt",
-  "hasNoFiscalObligations",
   "hasNoDpObligations",
 ];
 
@@ -207,7 +207,6 @@ module.exports = class CompanyController {
         declarationsCompleted: false,
         isZeroed: false,
         sentToClientFiscal: false,
-        declarationsCompletedFiscal: false,
         isZeroedFiscal: false,
         sentToClientDp: false,
         declarationsCompletedDp: false,
@@ -229,6 +228,9 @@ module.exports = class CompanyController {
 
       await CompanyController.sendCompanyRegisteredEmails(newCompany);
       await cacheManager.reloadAllGlobal();
+      // Aplica automaticamente obrigações e impostos que se encaixam nos filtros
+      ObligationController.applyObligationsToCompany(newCompany).catch(() => {});
+      TaxController.applyTaxesToCompany(newCompany).catch(() => {});
 
       return res.status(201).json({
         message: "Empresa criada com sucesso.",
@@ -749,19 +751,24 @@ module.exports = class CompanyController {
         });
       });
 
+      // Para Fiscal, declarationsCompleted e hasNoObligations foram removidos.
+      // Completion = sentToClient. Filtra undefined do array de attributes.
+      const isFiscalDept = config.obligationsEnabled === true;
+      const queryAttributes = [
+        config.isZeroed,
+        config.sentToClient,
+        !isFiscalDept && config.declarationsCompleted,
+        !isFiscalDept && config.hasNoObligations,
+        config.responsibleField,
+      ].filter(Boolean);
+
       const allCompaniesForUsers = await Company.findAll({
         where: {
           status: "ATIVA",
           isArchived: false,
           [config.responsibleField]: { [Op.in]: deptUserIds },
         },
-        attributes: [
-          config.isZeroed,
-          config.sentToClient,
-          config.declarationsCompleted,
-          config.hasNoObligations,
-          config.responsibleField,
-        ],
+        attributes: queryAttributes,
         raw: true,
       });
 
@@ -776,6 +783,16 @@ module.exports = class CompanyController {
         },
       });
 
+      const sentCompaniesCount = config.sentToClient
+        ? await Company.count({
+            where: {
+              status: "ATIVA",
+              isArchived: false,
+              [config.sentToClient]: true,
+            },
+          })
+        : 0;
+
       for (const company of allCompaniesForUsers) {
         const responsibleUser = usersDataMap.get(
           company[config.responsibleField]
@@ -785,21 +802,26 @@ module.exports = class CompanyController {
             responsibleUser.zeroedCompanies++;
           }
 
-          const isPartOfWorkload = !(
-            company[config.isZeroed] && company[config.hasNoObligations]
-          );
+          // Para Fiscal: toda empresa é parte da carga de trabalho
+          // Para outros: exclui zeradas sem obrigações
+          const isPartOfWorkload = isFiscalDept
+            ? true
+            : !(company[config.isZeroed] && company[config.hasNoObligations]);
 
           if (isPartOfWorkload) {
             totalForCalculation++;
             responsibleUser.totalCompaniesAssigned++;
 
             let isCompleted = false;
-            if (company[config.isZeroed]) {
-              isCompleted = company[config.declarationsCompleted];
+            if (isFiscalDept) {
+              // Fiscal: concluído = enviado ao cliente
+              isCompleted = !!company[config.sentToClient];
+            } else if (company[config.isZeroed]) {
+              isCompleted = !!company[config.declarationsCompleted];
             } else {
               isCompleted =
-                company[config.sentToClient] &&
-                company[config.declarationsCompleted];
+                !!company[config.sentToClient] &&
+                !!company[config.declarationsCompleted];
             }
 
             if (isCompleted) {
@@ -821,6 +843,8 @@ module.exports = class CompanyController {
         absoluteTotalForDept,
         zeroedCompanies: zeroedCompaniesCount,
         completedCompanies,
+        sentCompanies: sentCompaniesCount,
+        isFiscal: isFiscalDept,
         usersData,
       });
     } catch (error) {
@@ -860,23 +884,33 @@ module.exports = class CompanyController {
     }
 
     try {
+      const isFiscalDept = config.obligationsEnabled === true;
+
+      const whereClause = {
+        status: "ATIVA",
+        isArchived: false,
+        [config.responsibleField]: targetUserId,
+      };
+
+      // Para DP/Contábil: exclui zeradas sem obrigações
+      if (!isFiscalDept && config.hasNoObligations) {
+        whereClause[Op.not] = {
+          [Op.and]: [
+            { [config.isZeroed]: true },
+            { [config.hasNoObligations]: true },
+          ],
+        };
+      }
+
+      const queryAttributes = [
+        config.isZeroed,
+        config.sentToClient,
+        !isFiscalDept && config.declarationsCompleted,
+      ].filter(Boolean);
+
       const userCompanies = await Company.findAll({
-        where: {
-          status: "ATIVA",
-          isArchived: false,
-          [config.responsibleField]: targetUserId,
-          [Op.not]: {
-            [Op.and]: [
-              { [config.isZeroed]: true },
-              { [config.hasNoObligations]: true },
-            ],
-          },
-        },
-        attributes: [
-          config.isZeroed,
-          config.sentToClient,
-          config.declarationsCompleted,
-        ],
+        where: whereClause,
+        attributes: queryAttributes,
         raw: true,
       });
 
@@ -887,23 +921,30 @@ module.exports = class CompanyController {
       for (const company of userCompanies) {
         if (company[config.isZeroed]) {
           zeroedCompanies++;
-          if (company[config.declarationsCompleted]) {
-            completedCompanies++;
-          }
-        } else {
-          if (
-            company[config.sentToClient] &&
-            company[config.declarationsCompleted]
-          ) {
-            completedCompanies++;
-          }
         }
+
+        let isCompleted = false;
+        if (isFiscalDept) {
+          isCompleted = !!company[config.sentToClient];
+        } else if (company[config.isZeroed]) {
+          isCompleted = !!company[config.declarationsCompleted];
+        } else {
+          isCompleted =
+            !!company[config.sentToClient] &&
+            !!company[config.declarationsCompleted];
+        }
+
+        if (isCompleted) completedCompanies++;
       }
 
       res.status(200).json({
         totalCompanies,
         zeroedCompanies,
         completedCompanies,
+        sentCompanies: isFiscalDept
+          ? userCompanies.filter((c) => c[config.sentToClient]).length
+          : undefined,
+        isFiscal: isFiscalDept,
       });
     } catch (error) {
       logger.error(

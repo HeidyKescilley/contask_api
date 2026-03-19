@@ -362,9 +362,7 @@ module.exports = {
       const fieldsToReset = {
         // Fiscal
         sentToClientFiscal: false,
-        declarationsCompletedFiscal: false,
         isZeroedFiscal: false,
-        hasNoFiscalObligations: false,
         fiscalCompletedAt: null,
         // DP
         sentToClientDp: false,

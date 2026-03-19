@@ -34,6 +34,11 @@ const adminChangedPasswordEmailTemplate = loadTemplate(
 
 const birthdayNotificationTemplate = loadTemplate("birthdayNotification");
 
+// Templates para paralisações de atividades
+const activitySuspensionNotificationTemplate = loadTemplate("activitySuspensionNotification");
+const activitySuspensionReminderTemplate = loadTemplate("activitySuspensionReminder");
+const activitySuspensionExtensionTemplate = loadTemplate("activitySuspensionExtension");
+
 module.exports = {
   activeTemplate,
   closedTemplate,
@@ -45,4 +50,7 @@ module.exports = {
   suspendedCompaniesListTemplate,
   adminChangedPasswordEmailTemplate,
   birthdayNotificationTemplate,
+  activitySuspensionNotificationTemplate,
+  activitySuspensionReminderTemplate,
+  activitySuspensionExtensionTemplate,
 };

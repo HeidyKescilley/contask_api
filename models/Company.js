@@ -138,11 +138,6 @@ const Company = db.define(
       allowNull: false,
       defaultValue: false,
     },
-    declarationsCompletedFiscal: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
-    },
     isZeroedDp: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
@@ -165,11 +160,6 @@ const Company = db.define(
     dpCompletedAt: {
       type: DataTypes.DATE,
       allowNull: true,
-    },
-    hasNoFiscalObligations: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
     },
     hasNoDpObligations: {
       type: DataTypes.BOOLEAN,

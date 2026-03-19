@@ -3,12 +3,11 @@ const DEPARTMENT_CONFIG = {
     responsibleField: "respFiscalId",
     responsibleAlias: "respFiscal",
     sentToClient: "sentToClientFiscal",
-    declarationsCompleted: "declarationsCompletedFiscal",
     isZeroed: "isZeroedFiscal",
-    hasNoObligations: "hasNoFiscalObligations",
     completedAt: "fiscalCompletedAt",
     bonusField: "bonusValue",
     zeroedBonusDefault: 1,
+    obligationsEnabled: true,
   },
   Pessoal: {
     responsibleField: "respDpId",

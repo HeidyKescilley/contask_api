@@ -8,6 +8,10 @@ const FiscalHistory = require("./FiscalHistory");
 const ContactMode = require("./ContactMode");
 const Automation = require("./Automation");
 const BonusResult = require("./BonusResult");
+const AccessoryObligation = require("./AccessoryObligation");
+const CompanyObligationStatus = require("./CompanyObligationStatus");
+const CompanyTax = require("./CompanyTax");
+const CompanyTaxStatus = require("./CompanyTaxStatus");
 
 // Associações entre User e Company
 User.hasMany(Company, {
@@ -88,3 +92,63 @@ Automation.belongsToMany(Company, {
 // Associação entre User e BonusResult
 User.hasMany(BonusResult, { foreignKey: "userId", as: "bonusResults" });
 BonusResult.belongsTo(User, { foreignKey: "userId", as: "user" });
+
+// Associações para ObrigaçõesAcessórias
+AccessoryObligation.hasMany(CompanyObligationStatus, {
+  foreignKey: "obligationId",
+  as: "statuses",
+  onDelete: "CASCADE",
+});
+CompanyObligationStatus.belongsTo(AccessoryObligation, {
+  foreignKey: "obligationId",
+  as: "obligation",
+});
+
+Company.hasMany(CompanyObligationStatus, {
+  foreignKey: "companyId",
+  as: "obligationStatuses",
+  onDelete: "CASCADE",
+});
+CompanyObligationStatus.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+User.hasMany(CompanyObligationStatus, {
+  foreignKey: "completedById",
+  as: "completedObligations",
+});
+CompanyObligationStatus.belongsTo(User, {
+  foreignKey: "completedById",
+  as: "completedBy",
+});
+
+// Associações para Impostos
+CompanyTax.hasMany(CompanyTaxStatus, {
+  foreignKey: "taxId",
+  as: "statuses",
+  onDelete: "CASCADE",
+});
+CompanyTaxStatus.belongsTo(CompanyTax, { foreignKey: "taxId", as: "tax" });
+
+Company.hasMany(CompanyTaxStatus, {
+  foreignKey: "companyId",
+  as: "taxStatuses",
+  onDelete: "CASCADE",
+});
+CompanyTaxStatus.belongsTo(Company, { foreignKey: "companyId", as: "company" });
+
+User.hasMany(CompanyTaxStatus, {
+  foreignKey: "completedById",
+  as: "completedTaxes",
+});
+CompanyTaxStatus.belongsTo(User, { foreignKey: "completedById", as: "completedBy" });
+
+// Associações para Paralisações de Atividades
+const ActivitySuspension = require("./ActivitySuspension");
+Company.hasMany(ActivitySuspension, { foreignKey: "companyId", as: "suspensions", onDelete: "CASCADE" });
+ActivitySuspension.belongsTo(Company, { foreignKey: "companyId", as: "company" });
+User.hasMany(ActivitySuspension, { foreignKey: "createdById", as: "createdSuspensions" });
+ActivitySuspension.belongsTo(User, { foreignKey: "createdById", as: "createdBy" });
+User.hasMany(ActivitySuspension, { foreignKey: "endedById", as: "endedSuspensions" });
+ActivitySuspension.belongsTo(User, { foreignKey: "endedById", as: "endedBy" });
