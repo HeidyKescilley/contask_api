@@ -13,6 +13,7 @@ router.get("/company/:companyId", verifyToken, TaxController.getCompanyTaxes);
 router.post("/company/:companyId/toggle", verifyToken, verifyAdmin, TaxController.toggleManual);
 
 router.patch("/status/:statusId", verifyToken, TaxController.updateStatus);
+router.post("/batch-update", verifyToken, TaxController.batchUpdate);
 router.get("/period-summary", verifyToken, TaxController.getPeriodSummary);
 router.get("/dashboard", verifyToken, TaxController.getDashboard);
 router.get("/companies/:taxId", verifyToken, TaxController.getCompaniesByTax);

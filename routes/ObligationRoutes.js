@@ -18,6 +18,7 @@ router.post("/company/:companyId/toggle", verifyToken, verifyAdmin, ObligationCo
 
 // Atualizar status de uma obrigação (agente fiscal)
 router.patch("/status/:statusId", verifyToken, ObligationController.updateStatus);
+router.post("/batch-update", verifyToken, ObligationController.batchUpdate);
 
 // Resumo do período (agente fiscal)
 router.get("/period-summary", verifyToken, ObligationController.getPeriodSummary);

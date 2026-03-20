@@ -1,6 +1,7 @@
 // D:\ContHub\contask_api\routes\AdminRoutes.js
 const router = require("express").Router();
 const AdminController = require("../controllers/AdminController");
+const DbVerifyController = require("../controllers/DbVerifyController");
 const verifyAdmin = require("../helpers/verify-admin");
 const activityLogger = require("../middlewares/activityLogger");
 
@@ -66,5 +67,9 @@ router.post(
   activityLogger,
   AdminController.resetMonthlyAgentData
 );
+
+// Verificação e correção de inconsistências no banco de dados (admin only)
+router.get("/db-verify", verifyAdmin, DbVerifyController.verify);
+router.patch("/db-verify/fix", verifyAdmin, DbVerifyController.fix);
 
 module.exports = router;

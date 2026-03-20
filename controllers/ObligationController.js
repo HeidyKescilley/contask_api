@@ -11,6 +11,7 @@ const {
   formatDeadline,
 } = require("../utils/businessDays");
 const cacheManager = require("../utils/CacheManager");
+const { checkAndUpdateFiscalCompletion } = require("../utils/fiscalCompletionChecker");
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -330,9 +331,56 @@ module.exports = class ObligationController {
 
       await record.update(updates);
       cacheManager.invalidateByPrefix("obl_dashboard");
+
+      // Verifica e atualiza fiscalCompletedAt da empresa (fire-and-forget assíncrono)
+      // Usa o período do mês atual como referência para os impostos
+      const taxPeriod = record.period.length === 7 ? record.period : record.period.substring(0, 7);
+      checkAndUpdateFiscalCompletion(record.companyId, taxPeriod).catch(() => {});
+
       return res.json(record);
     } catch (err) {
       logger.error(`ObligationController.updateStatus: ${err.message}`);
+      return res.status(500).json({ message: err.message });
+    }
+  }
+
+  // POST /obligation/batch-update
+  // Body: { action: "add"|"remove", obligationId, companyIds[] }
+  static async batchUpdate(req, res) {
+    try {
+      const { action, obligationId, companyIds } = req.body;
+      if (!["add", "remove"].includes(action)) return res.status(400).json({ message: "Ação inválida." });
+      if (!obligationId) return res.status(400).json({ message: "obligationId é obrigatório." });
+      if (!Array.isArray(companyIds) || companyIds.length === 0) return res.status(400).json({ message: "companyIds deve ser um array não vazio." });
+
+      const obligation = await AccessoryObligation.findByPk(obligationId);
+      if (!obligation) return res.status(404).json({ message: "Obrigação não encontrada." });
+
+      const period = getCurrentPeriod(obligation);
+
+      if (action === "add") {
+        const companies = await Company.findAll({ where: { id: companyIds } });
+        const toCreate = [];
+        for (const company of companies) {
+          const shouldBeDisabled = !obligation.sendWhenZeroed && company.isZeroedFiscal;
+          toCreate.push({
+            companyId: company.id, obligationId, period,
+            status: shouldBeDisabled ? "disabled" : "pending",
+            isManuallyAssigned: true,
+          });
+        }
+        await CompanyObligationStatus.bulkCreate(toCreate, {
+          updateOnDuplicate: ["isManuallyAssigned"],
+        });
+      } else {
+        await CompanyObligationStatus.destroy({ where: { companyId: companyIds, obligationId, isManuallyAssigned: true } });
+      }
+
+      cacheManager.invalidateByPrefix("obl_dashboard");
+      cacheManager.invalidateByPrefix("my_companies_");
+      return res.json({ message: `Obrigação ${action === "add" ? "adicionada" : "removida"} para ${companyIds.length} empresa(s).` });
+    } catch (err) {
+      logger.error(`ObligationController.batchUpdate: ${err.message}`);
       return res.status(500).json({ message: err.message });
     }
   }
@@ -362,47 +410,107 @@ module.exports = class ObligationController {
     try {
       const { department = "Fiscal" } = req.query;
 
-      // Determina período ativo
       const obligations = await AccessoryObligation.findAll({ where: { department } });
       if (obligations.length === 0) return res.json({ obligations: [], companies: [] });
 
-      // Usa a periodicidade da primeira obrigação para calcular o período atual
-      // (idealidade: suportar múltiplas periodicidades no mesmo resumo)
+      // Pré-computar período por obrigação (suporte a múltiplas periodicidades)
+      const oblPeriods = {};
+      const periodSet = new Set();
+      for (const obl of obligations) {
+        const p = req.query.period || getCurrentPeriod(obl);
+        oblPeriods[obl.id] = p;
+        periodSet.add(p);
+      }
       const period = req.query.period || getCurrentPeriod(obligations[0]);
 
-      // Busca apenas empresas ativas (suspensas/baixadas/distratadas não contam)
       const companies = await Company.findAll({ where: { isArchived: false, status: "ATIVA" } });
+      if (companies.length === 0) return res.json({ period, obligations, companies: [] });
+
+      const companyIds = companies.map((c) => c.id);
+      const obligationIds = obligations.map((o) => o.id);
+
+      // 3 queries em batch — substitui N×(2+M) queries individuais
+      const [allExclusions, allManuals, existingStatuses] = await Promise.all([
+        CompanyObligationStatus.findAll({
+          where: { companyId: companyIds, isManuallyExcluded: true },
+          attributes: ["companyId", "obligationId"],
+          raw: true,
+        }),
+        CompanyObligationStatus.findAll({
+          where: { companyId: companyIds, isManuallyAssigned: true },
+          attributes: ["companyId", "obligationId"],
+          raw: true,
+        }),
+        CompanyObligationStatus.findAll({
+          where: {
+            companyId: companyIds,
+            obligationId: obligationIds,
+            period: { [Op.in]: [...periodSet] },
+          },
+          attributes: ["id", "companyId", "obligationId", "period", "status", "completedAt"],
+          raw: true,
+        }),
+      ]);
+
+      // Maps de lookup O(1)
+      const excludedMap = new Map();
+      for (const e of allExclusions) {
+        if (!excludedMap.has(e.companyId)) excludedMap.set(e.companyId, new Set());
+        excludedMap.get(e.companyId).add(e.obligationId);
+      }
+      const manualMap = new Map();
+      for (const m of allManuals) {
+        if (!manualMap.has(m.companyId)) manualMap.set(m.companyId, new Set());
+        manualMap.get(m.companyId).add(m.obligationId);
+      }
+      const statusMap = new Map();
+      for (const s of existingStatuses) {
+        statusMap.set(`${s.companyId}_${s.obligationId}_${s.period}`, s);
+      }
 
       const result = [];
+      const toCreate = [];
+      const toDisable = [];
+      const toEnable = [];
+
       for (const company of companies) {
-        // Obrigações excluídas manualmente para esta empresa
-        const excludedStatuses = await CompanyObligationStatus.findAll({
-          where: { companyId: company.id, isManuallyExcluded: true },
-          attributes: ["obligationId"],
-        });
-        const excludedIds = new Set(excludedStatuses.map((s) => s.obligationId));
-
-        // Obrigações adicionadas manualmente para esta empresa
-        const manualStatuses = await CompanyObligationStatus.findAll({
-          where: { companyId: company.id, isManuallyAssigned: true },
-          attributes: ["obligationId"],
-        });
-        const manualIds = new Set(manualStatuses.map((s) => s.obligationId));
-
+        const excludedIds = excludedMap.get(company.id) || new Set();
+        const manualIds = manualMap.get(company.id) || new Set();
         const companyObligations = [];
+
         for (const obl of obligations) {
-          if (excludedIds.has(obl.id)) continue; // excluída manualmente
+          if (excludedIds.has(obl.id)) continue;
           if (!obligationMatchesCompany(obl, company) && !manualIds.has(obl.id)) continue;
-          const oblPeriod = req.query.period || getCurrentPeriod(obl);
-          const statusRecord = await getOrCreateStatus(company, obl, oblPeriod);
-          companyObligations.push({
-            obligationId: obl.id,
-            name: obl.name,
-            statusId: statusRecord.id,
-            status: statusRecord.status,
-            completedAt: statusRecord.completedAt,
-          });
+
+          const oblPeriod = oblPeriods[obl.id];
+          const shouldBeDisabled = !obl.sendWhenZeroed && company.isZeroedFiscal;
+          const expectedStatus = shouldBeDisabled ? "disabled" : "pending";
+          const key = `${company.id}_${obl.id}_${oblPeriod}`;
+          const existing = statusMap.get(key);
+
+          if (!existing) {
+            toCreate.push({ companyId: company.id, obligationId: obl.id, period: oblPeriod, status: expectedStatus });
+            companyObligations.push({
+              obligationId: obl.id, name: obl.name,
+              statusId: null, status: expectedStatus, completedAt: null,
+              _key: key,
+            });
+          } else {
+            if (shouldBeDisabled && existing.status === "pending") {
+              toDisable.push(existing.id);
+              existing.status = "disabled";
+            } else if (!shouldBeDisabled && existing.status === "disabled") {
+              // Empresa deixou de ser zerada: reabilitar obrigação automaticamente
+              toEnable.push(existing.id);
+              existing.status = "pending";
+            }
+            companyObligations.push({
+              obligationId: obl.id, name: obl.name,
+              statusId: existing.id, status: existing.status, completedAt: existing.completedAt,
+            });
+          }
         }
+
         if (companyObligations.length > 0) {
           result.push({
             companyId: company.id,
@@ -418,6 +526,41 @@ module.exports = class ObligationController {
           });
         }
       }
+
+      // Operações em batch — apenas quando necessário
+      const ops = [];
+      if (toCreate.length > 0) {
+        ops.push(
+          CompanyObligationStatus.bulkCreate(toCreate, { ignoreDuplicates: true }).then(async () => {
+            const fresh = await CompanyObligationStatus.findAll({
+              where: {
+                companyId: companyIds,
+                obligationId: obligationIds,
+                period: { [Op.in]: [...periodSet] },
+              },
+              attributes: ["id", "companyId", "obligationId", "period", "status"],
+              raw: true,
+            });
+            const freshMap = new Map();
+            for (const r of fresh) freshMap.set(`${r.companyId}_${r.obligationId}_${r.period}`, r);
+            for (const comp of result) {
+              for (const obl of comp.obligations) {
+                if (obl._key) {
+                  const rec = freshMap.get(obl._key);
+                  if (rec) { obl.statusId = rec.id; delete obl._key; }
+                }
+              }
+            }
+          })
+        );
+      }
+      if (toDisable.length > 0) {
+        ops.push(CompanyObligationStatus.update({ status: "disabled" }, { where: { id: toDisable } }));
+      }
+      if (toEnable.length > 0) {
+        ops.push(CompanyObligationStatus.update({ status: "pending" }, { where: { id: toEnable } }));
+      }
+      if (ops.length > 0) await Promise.all(ops);
 
       return res.json({ period, obligations, companies: result });
     } catch (err) {

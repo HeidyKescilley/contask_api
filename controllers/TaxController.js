@@ -6,6 +6,7 @@ const User = require("../models/User");
 const logger = require("../logger/logger");
 const { getDeptConfig } = require("../config/departmentConfig");
 const cacheManager = require("../utils/CacheManager");
+const { checkAndUpdateFiscalCompletion } = require("../utils/fiscalCompletionChecker");
 
 // ── Período atual (sempre mensal) ──────────────────────────────────────────────
 function getCurrentMonthPeriod(date = new Date()) {
@@ -243,6 +244,10 @@ module.exports = class TaxController {
         completedById: status === "completed" ? (req.user?.id || null) : null,
       });
       cacheManager.invalidateByPrefix("tax_dashboard");
+
+      // Verifica e atualiza fiscalCompletedAt da empresa (fire-and-forget assíncrono)
+      checkAndUpdateFiscalCompletion(record.companyId, record.period).catch(() => {});
+
       return res.json(record);
     } catch (err) {
       logger.error(`TaxController.updateStatus: ${err.message}`);
@@ -260,35 +265,86 @@ module.exports = class TaxController {
       if (taxes.length === 0) return res.json({ period, taxes: [], companies: [] });
 
       const companies = await Company.findAll({ where: { isArchived: false, status: "ATIVA" } });
+      if (companies.length === 0) return res.json({ period, taxes, companies: [] });
+
+      const companyIds = companies.map((c) => c.id);
+      const taxIds = taxes.map((t) => t.id);
+
+      // 3 queries em batch — substitui N×(2+M) queries individuais
+      const [allExclusions, allManuals, existingStatuses] = await Promise.all([
+        CompanyTaxStatus.findAll({
+          where: { companyId: companyIds, isManuallyExcluded: true },
+          attributes: ["companyId", "taxId"],
+          raw: true,
+        }),
+        CompanyTaxStatus.findAll({
+          where: { companyId: companyIds, isManuallyAssigned: true },
+          attributes: ["companyId", "taxId"],
+          raw: true,
+        }),
+        CompanyTaxStatus.findAll({
+          where: { companyId: companyIds, taxId: taxIds, period },
+          attributes: ["id", "companyId", "taxId", "status", "completedAt"],
+          raw: true,
+        }),
+      ]);
+
+      // Maps de lookup O(1)
+      const excludedMap = new Map();
+      for (const e of allExclusions) {
+        if (!excludedMap.has(e.companyId)) excludedMap.set(e.companyId, new Set());
+        excludedMap.get(e.companyId).add(e.taxId);
+      }
+      const manualMap = new Map();
+      for (const m of allManuals) {
+        if (!manualMap.has(m.companyId)) manualMap.set(m.companyId, new Set());
+        manualMap.get(m.companyId).add(m.taxId);
+      }
+      const statusMap = new Map();
+      for (const s of existingStatuses) {
+        statusMap.set(`${s.companyId}_${s.taxId}`, s);
+      }
+
       const result = [];
+      const toCreate = [];
+      const toDisable = [];
+      const toEnable = [];
 
       for (const company of companies) {
-        const excludedStatuses = await CompanyTaxStatus.findAll({
-          where: { companyId: company.id, isManuallyExcluded: true },
-          attributes: ["taxId"],
-        });
-        const excludedIds = new Set(excludedStatuses.map((s) => s.taxId));
-
-        const manualStatuses = await CompanyTaxStatus.findAll({
-          where: { companyId: company.id, isManuallyAssigned: true },
-          attributes: ["taxId"],
-        });
-        const manualIds = new Set(manualStatuses.map((s) => s.taxId));
-
+        const excludedIds = excludedMap.get(company.id) || new Set();
+        const manualIds = manualMap.get(company.id) || new Set();
         const companyTaxes = [];
+
         for (const tax of taxes) {
           if (excludedIds.has(tax.id)) continue;
           if (!taxMatchesCompany(tax, company) && !manualIds.has(tax.id)) continue;
 
-          const statusRecord = await getOrCreateTaxStatus(company, tax, period);
-          companyTaxes.push({
-            taxId: tax.id,
-            name: tax.name,
-            department: tax.department,
-            statusId: statusRecord.id,
-            status: statusRecord.status,
-            completedAt: statusRecord.completedAt,
-          });
+          const zeroed = isCompanyZeroedForDept(company, tax.department);
+          const expectedStatus = zeroed ? "disabled" : "pending";
+          const key = `${company.id}_${tax.id}`;
+          const existing = statusMap.get(key);
+
+          if (!existing) {
+            toCreate.push({ companyId: company.id, taxId: tax.id, period, status: expectedStatus });
+            companyTaxes.push({
+              taxId: tax.id, name: tax.name, department: tax.department,
+              statusId: null, status: expectedStatus, completedAt: null,
+              _key: key,
+            });
+          } else {
+            if (zeroed && existing.status === "pending") {
+              toDisable.push(existing.id);
+              existing.status = "disabled";
+            } else if (!zeroed && existing.status === "disabled") {
+              // Empresa deixou de ser zerada: reabilitar imposto automaticamente
+              toEnable.push(existing.id);
+              existing.status = "pending";
+            }
+            companyTaxes.push({
+              taxId: tax.id, name: tax.name, department: tax.department,
+              statusId: existing.id, status: existing.status, completedAt: existing.completedAt,
+            });
+          }
         }
 
         if (companyTaxes.length > 0) {
@@ -306,6 +362,37 @@ module.exports = class TaxController {
           });
         }
       }
+
+      // Operações em batch — apenas quando necessário
+      const ops = [];
+      if (toCreate.length > 0) {
+        ops.push(
+          CompanyTaxStatus.bulkCreate(toCreate, { ignoreDuplicates: true }).then(async () => {
+            const fresh = await CompanyTaxStatus.findAll({
+              where: { companyId: companyIds, taxId: taxIds, period },
+              attributes: ["id", "companyId", "taxId", "status"],
+              raw: true,
+            });
+            const freshMap = new Map();
+            for (const r of fresh) freshMap.set(`${r.companyId}_${r.taxId}`, r);
+            for (const comp of result) {
+              for (const tax of comp.taxes) {
+                if (tax._key) {
+                  const rec = freshMap.get(tax._key);
+                  if (rec) { tax.statusId = rec.id; delete tax._key; }
+                }
+              }
+            }
+          })
+        );
+      }
+      if (toDisable.length > 0) {
+        ops.push(CompanyTaxStatus.update({ status: "disabled" }, { where: { id: toDisable } }));
+      }
+      if (toEnable.length > 0) {
+        ops.push(CompanyTaxStatus.update({ status: "pending" }, { where: { id: toEnable } }));
+      }
+      if (ops.length > 0) await Promise.all(ops);
 
       return res.json({ period, taxes, companies: result });
     } catch (err) {
@@ -499,6 +586,48 @@ module.exports = class TaxController {
       return res.json({ tax: tax.toJSON(), period, companies: rows });
     } catch (err) {
       logger.error(`TaxController.getCompaniesByTax: ${err.message}`);
+      return res.status(500).json({ message: err.message });
+    }
+  }
+
+  // POST /tax/batch-update
+  // Body: { action: "add"|"remove", taxId, companyIds[] }
+  static async batchUpdate(req, res) {
+    try {
+      const { action, taxId, companyIds } = req.body;
+      if (!["add", "remove"].includes(action)) return res.status(400).json({ message: "Ação inválida." });
+      if (!taxId) return res.status(400).json({ message: "taxId é obrigatório." });
+      if (!Array.isArray(companyIds) || companyIds.length === 0) return res.status(400).json({ message: "companyIds deve ser um array não vazio." });
+
+      const tax = await CompanyTax.findByPk(taxId);
+      if (!tax) return res.status(404).json({ message: "Imposto não encontrado." });
+
+      const period = getCurrentMonthPeriod();
+
+      if (action === "add") {
+        const companies = await Company.findAll({ where: { id: companyIds } });
+        const toCreate = [];
+        for (const company of companies) {
+          const zeroed = isCompanyZeroedForDept(company, tax.department);
+          toCreate.push({
+            companyId: company.id, taxId, period,
+            status: zeroed ? "disabled" : "pending",
+            isManuallyAssigned: true,
+          });
+        }
+        await CompanyTaxStatus.bulkCreate(toCreate, {
+          updateOnDuplicate: ["isManuallyAssigned"],
+        });
+      } else {
+        // remove: apaga registros manualmente atribuídos
+        await CompanyTaxStatus.destroy({ where: { companyId: companyIds, taxId, isManuallyAssigned: true } });
+      }
+
+      cacheManager.invalidateByPrefix("tax_dashboard");
+      cacheManager.invalidateByPrefix("my_companies_");
+      return res.json({ message: `Imposto ${action === "add" ? "adicionado" : "removido"} para ${companyIds.length} empresa(s).` });
+    } catch (err) {
+      logger.error(`TaxController.batchUpdate: ${err.message}`);
       return res.status(500).json({ message: err.message });
     }
   }

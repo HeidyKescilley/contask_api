@@ -25,6 +25,15 @@ const {
   getDeptConfig,
   getAllDeptConfigs,
 } = require("../config/departmentConfig");
+const CompanyTaxStatus = require("../models/CompanyTaxStatus");
+const CompanyObligationStatus = require("../models/CompanyObligationStatus");
+const { checkAndUpdateFiscalCompletion } = require("../utils/fiscalCompletionChecker");
+
+function getCurrentMonthPeriod(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
 
 // Lista completa de atributos da Company para uso em findAll/findOne
 const COMPANY_ATTRIBUTES = [
@@ -627,10 +636,6 @@ module.exports = class CompanyController {
 
         if (config.isZeroed in agentData) {
           updatePayload[config.isZeroed] = agentData[config.isZeroed];
-          if (agentData[config.isZeroed]) {
-            updatePayload[config.sentToClient] = false;
-            updatePayload[config.bonusField] = config.zeroedBonusDefault;
-          }
         }
 
         if (config.hasNoObligations in agentData) {
@@ -664,6 +669,31 @@ module.exports = class CompanyController {
       }
 
       await company.update(updatePayload);
+
+      // Quando isZeroedFiscal é DESMARCADO: reativar statuses que foram desabilitados automaticamente
+      if ("isZeroedFiscal" in agentData && !agentData.isZeroedFiscal && previousState.isZeroedFiscal) {
+        const currentMonth = getCurrentMonthPeriod();
+        const currentYear = currentMonth.substring(0, 4);
+        await Promise.all([
+          CompanyTaxStatus.update(
+            { status: "pending" },
+            { where: { companyId, period: currentMonth, status: "disabled", isManuallyExcluded: false } }
+          ),
+          CompanyObligationStatus.update(
+            { status: "pending" },
+            { where: { companyId, period: { [Op.like]: `${currentMonth}%` }, status: "disabled", isManuallyExcluded: false } }
+          ),
+          CompanyObligationStatus.update(
+            { status: "pending" },
+            { where: { companyId, period: currentYear, status: "disabled", isManuallyExcluded: false } }
+          ),
+        ]);
+      }
+
+      // Quando isZeroedFiscal é MARCADO: desabilitar impostos e obrigações (sendWhenZeroed=false)
+      if ("isZeroedFiscal" in agentData && agentData.isZeroedFiscal && !previousState.isZeroedFiscal) {
+        checkAndUpdateFiscalCompletion(companyId, getCurrentMonthPeriod()).catch(() => {});
+      }
 
       logger.info(
         `Dados do agente para empresa ${company.name} (ID: ${companyId}) atualizados por ${user.email}.`
