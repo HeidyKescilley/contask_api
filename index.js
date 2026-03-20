@@ -124,7 +124,7 @@ async function cleanupDuplicateIndexes() {
 
 cleanupDuplicateIndexes().then(() =>
 sequelize
-  .sync({ alter: true })
+  .sync({ alter: false })
   .then(async () => {
     // Seed impostos padrão (findOrCreate — não duplica em restart)
     for (const tax of DEFAULT_TAXES) {
