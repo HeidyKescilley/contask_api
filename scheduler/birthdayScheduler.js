@@ -1,7 +1,7 @@
 // D:\projetos\contask_v2\contask_api\scheduler\birthdayScheduler.js
 
 const cron = require("node-cron");
-const { Op, fn, col } = require("sequelize");
+const { Op, fn, col, where } = require("sequelize");
 const User = require("../models/User");
 const transporter = require("../services/emailService");
 const { birthdayNotificationTemplate } = require("../emails/templates");
@@ -18,8 +18,8 @@ const sendBirthdayNotifications = async () => {
     const birthdayUsers = await User.findAll({
       where: {
         [Op.and]: [
-          fn('DAY', col('birthday')) = currentDay,
-          fn('MONTH', col('birthday')) = currentMonth
+          where(fn('DAY', col('birthday')), currentDay),
+          where(fn('MONTH', col('birthday')), currentMonth),
         ]
       },
       attributes: ["id", "name", "department", "email", "role"],

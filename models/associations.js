@@ -1,5 +1,7 @@
 // /models/association.js
 const User = require("./User");
+const BirthdayNotificationSeen = require("./BirthdayNotificationSeen");
+const UserActivity = require("./UserActivity");
 const Company = require("./Company");
 const Alert = require("./Alert");
 const StatusHistory = require("./StatusHistory");
@@ -143,6 +145,16 @@ User.hasMany(CompanyTaxStatus, {
   as: "completedTaxes",
 });
 CompanyTaxStatus.belongsTo(User, { foreignKey: "completedById", as: "completedBy" });
+
+// Associações para BirthdayNotificationSeen
+User.hasMany(BirthdayNotificationSeen, { foreignKey: "adminId", as: "birthdaysSeen" });
+BirthdayNotificationSeen.belongsTo(User, { foreignKey: "adminId", as: "admin" });
+User.hasMany(BirthdayNotificationSeen, { foreignKey: "birthdayUserId", as: "birthdayNotifications" });
+BirthdayNotificationSeen.belongsTo(User, { foreignKey: "birthdayUserId", as: "birthdayUser" });
+
+// Associações para UserActivity
+User.hasMany(UserActivity, { foreignKey: "userId", as: "activities" });
+UserActivity.belongsTo(User, { foreignKey: "userId", as: "user" });
 
 // Associações para Paralisações de Atividades
 const ActivitySuspension = require("./ActivitySuspension");

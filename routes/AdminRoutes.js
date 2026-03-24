@@ -68,6 +68,12 @@ router.post(
   AdminController.resetMonthlyAgentData
 );
 
+router.get(
+  "/activity-monitor",
+  verifyAdmin,
+  AdminController.getActivityMonitor
+);
+
 // Verificação e correção de inconsistências no banco de dados (admin only)
 router.get("/db-verify", verifyAdmin, DbVerifyController.verify);
 router.patch("/db-verify/fix", verifyAdmin, DbVerifyController.fix);

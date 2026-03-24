@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const Company = require("../models/Company");
+const UserActivity = require("../models/UserActivity");
 const { Op } = require("sequelize");
 const { suspendedCompaniesListTemplate, adminChangedPasswordEmailTemplate } = require("../emails/templates");
 const formatDate = require("../helpers/format-date");
@@ -349,6 +350,63 @@ module.exports = {
       res
         .status(500)
         .json({ message: "Ocorreu um erro ao buscar os dados das equipes." });
+    }
+  },
+
+  getActivityMonitor: async (req, res) => {
+    const allowedIds = [1, 4];
+    if (!allowedIds.includes(req.user.id)) {
+      return res.status(403).json({ message: "Acesso não autorizado." });
+    }
+
+    try {
+      const allUsers = await User.findAll({
+        where: { role: { [Op.ne]: "not-validated" } },
+        attributes: ["id", "name", "department"],
+        order: [["name", "ASC"]],
+      });
+
+      const today = new Date();
+      const days = [];
+
+      for (let i = 0; i < 30; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        const dateStr = date.toISOString().split("T")[0]; // YYYY-MM-DD
+
+        const activities = await UserActivity.findAll({
+          where: { date: dateStr },
+          attributes: ["userId"],
+        });
+
+        const usedIds = new Set(activities.map((a) => a.userId));
+        const usedBy = allUsers.filter((u) => usedIds.has(u.id)).map((u) => ({ id: u.id, name: u.name }));
+        const notUsedBy = allUsers.filter((u) => !usedIds.has(u.id)).map((u) => ({ id: u.id, name: u.name }));
+
+        days.push({ date: dateStr, usedBy, notUsedBy });
+      }
+
+      // Ranking: conta quantos dias cada usuário usou nos últimos 30 dias
+      const activityCounts = await UserActivity.findAll({
+        where: {
+          date: { [Op.gte]: new Date(new Date().setDate(today.getDate() - 29)).toISOString().split("T")[0] },
+        },
+        attributes: ["userId"],
+      });
+
+      const countMap = {};
+      for (const a of activityCounts) {
+        countMap[a.userId] = (countMap[a.userId] || 0) + 1;
+      }
+
+      const ranking = allUsers
+        .map((u) => ({ id: u.id, name: u.name, department: u.department, daysUsed: countMap[u.id] || 0 }))
+        .sort((a, b) => b.daysUsed - a.daysUsed);
+
+      return res.status(200).json({ days, ranking });
+    } catch (error) {
+      logger.error(`Erro ao buscar monitor de atividade: ${error.message}`);
+      return res.status(500).json({ message: "Erro ao buscar dados de atividade." });
     }
   },
 
