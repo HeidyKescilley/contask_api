@@ -156,6 +156,19 @@ BirthdayNotificationSeen.belongsTo(User, { foreignKey: "birthdayUserId", as: "bi
 User.hasMany(UserActivity, { foreignKey: "userId", as: "activities" });
 UserActivity.belongsTo(User, { foreignKey: "userId", as: "user" });
 
+// Associações para Avisos Globais
+const Announcement = require("./Announcement");
+const AnnouncementSeen = require("./AnnouncementSeen");
+
+User.hasMany(Announcement, { foreignKey: "createdById", as: "announcements" });
+Announcement.belongsTo(User, { foreignKey: "createdById", as: "creator" });
+
+User.hasMany(AnnouncementSeen, { foreignKey: "userId", as: "announcementsSeen" });
+AnnouncementSeen.belongsTo(User, { foreignKey: "userId", as: "user" });
+
+Announcement.hasMany(AnnouncementSeen, { foreignKey: "announcementId", onDelete: "CASCADE" });
+AnnouncementSeen.belongsTo(Announcement, { foreignKey: "announcementId" });
+
 // Associações para Paralisações de Atividades
 const ActivitySuspension = require("./ActivitySuspension");
 Company.hasMany(ActivitySuspension, { foreignKey: "companyId", as: "suspensions", onDelete: "CASCADE" });

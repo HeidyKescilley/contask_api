@@ -25,6 +25,8 @@ const CompanyTaxStatus = require("./models/CompanyTaxStatus");
 const ActivitySuspension = require("./models/ActivitySuspension");
 const BirthdayNotificationSeen = require("./models/BirthdayNotificationSeen");
 const UserActivity = require("./models/UserActivity");
+const Announcement = require("./models/Announcement");
+const AnnouncementSeen = require("./models/AnnouncementSeen");
 
 // Importando associações
 require("./models/associations");
@@ -75,6 +77,7 @@ const ObligationRoutes = require("./routes/ObligationRoutes");
 const TaxRoutes = require("./routes/TaxRoutes");
 const ActivitySuspensionRoutes = require("./routes/ActivitySuspensionRoutes");
 const BirthdayRoutes = require("./routes/BirthdayRoutes");
+const AnnouncementRoutes = require("./routes/AnnouncementRoutes");
 
 app.use("/", UserRoutes);
 app.use("/company", CompanyRoutes);
@@ -86,6 +89,7 @@ app.use("/obligation", ObligationRoutes);
 app.use("/tax", TaxRoutes);
 app.use("/activity-suspension", ActivitySuspensionRoutes);
 app.use("/", BirthdayRoutes);
+app.use("/", AnnouncementRoutes);
 
 const errorHandler = require("./middlewares/errorHandler");
 app.use(errorHandler);
