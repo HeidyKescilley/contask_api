@@ -57,6 +57,11 @@ const AccessoryObligation = db.define("AccessoryObligation", {
     allowNull: true,
     comment: "Array de UFs (ex: [\"SP\",\"RJ\"]) ou null para todas",
   },
+  baseReceiptsDir: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: "Diretório base dos comprovantes desta obrigação",
+  },
 });
 
 module.exports = AccessoryObligation;

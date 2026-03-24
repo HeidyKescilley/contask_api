@@ -28,5 +28,6 @@ router.get("/dashboard", verifyToken, ObligationController.getDashboard);
 
 // Lista de empresas por obrigação (para modal do dashboard)
 router.get("/companies/:obligationId", verifyToken, ObligationController.getCompaniesByObligation);
+router.post("/:id/reimplementar", verifyToken, verifyAdmin, ObligationController.reimplementar);
 
 module.exports = router;

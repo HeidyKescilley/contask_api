@@ -17,5 +17,6 @@ router.post("/batch-update", verifyToken, TaxController.batchUpdate);
 router.get("/period-summary", verifyToken, TaxController.getPeriodSummary);
 router.get("/dashboard", verifyToken, TaxController.getDashboard);
 router.get("/companies/:taxId", verifyToken, TaxController.getCompaniesByTax);
+router.post("/:id/reimplementar", verifyToken, verifyAdmin, TaxController.reimplementar);
 
 module.exports = router;

@@ -35,7 +35,7 @@ app.use(express.json());
 app.use(
   cors({
     origin: "*",
-  })
+  }),
 );
 
 /*const allowedOrigins = ["http://localhost:3000", "http://localhost:5173"];
@@ -87,13 +87,55 @@ const errorHandler = require("./middlewares/errorHandler");
 app.use(errorHandler);
 
 const DEFAULT_TAXES = [
-  { name: "DAS",        department: "Fiscal", applicableRegimes: ["Simples", "MEI"],               applicableClassificacoes: null, applicableUFs: null },
-  { name: "ICMS",       department: "Fiscal", applicableRegimes: ["Simples", "Presumido", "Real"], applicableClassificacoes: ["ICMS", "ICMS/ISS"], applicableUFs: null },
-  { name: "ISS",        department: "Fiscal", applicableRegimes: ["Simples", "Presumido", "Real"], applicableClassificacoes: ["ISS", "ICMS/ISS"], applicableUFs: null },
-  { name: "PIS/COFINS", department: "Fiscal", applicableRegimes: ["Presumido", "Real"],            applicableClassificacoes: null, applicableUFs: null },
-  { name: "IRPJ/CSLL",  department: "Fiscal", applicableRegimes: ["Presumido", "Real"],            applicableClassificacoes: null, applicableUFs: null },
-  { name: "IPI",        department: "Fiscal", applicableRegimes: ["Real"],                         applicableClassificacoes: null, applicableUFs: null },
-  { name: "IRRF",       department: "Fiscal", applicableRegimes: ["Presumido", "Real"],            applicableClassificacoes: null, applicableUFs: null },
+  {
+    name: "DAS",
+    department: "Fiscal",
+    applicableRegimes: ["Simples", "MEI"],
+    applicableClassificacoes: null,
+    applicableUFs: null,
+  },
+  {
+    name: "ICMS",
+    department: "Fiscal",
+    applicableRegimes: ["Simples", "Presumido", "Real"],
+    applicableClassificacoes: ["ICMS", "ICMS/ISS"],
+    applicableUFs: null,
+  },
+  {
+    name: "ISS",
+    department: "Fiscal",
+    applicableRegimes: ["Simples", "Presumido", "Real"],
+    applicableClassificacoes: ["ISS", "ICMS/ISS"],
+    applicableUFs: null,
+  },
+  {
+    name: "PIS/COFINS",
+    department: "Fiscal",
+    applicableRegimes: ["Presumido", "Real"],
+    applicableClassificacoes: null,
+    applicableUFs: null,
+  },
+  {
+    name: "IRPJ/CSLL",
+    department: "Fiscal",
+    applicableRegimes: ["Presumido", "Real"],
+    applicableClassificacoes: null,
+    applicableUFs: null,
+  },
+  {
+    name: "IPI",
+    department: "Fiscal",
+    applicableRegimes: ["Real"],
+    applicableClassificacoes: null,
+    applicableUFs: null,
+  },
+  {
+    name: "IRRF",
+    department: "Fiscal",
+    applicableRegimes: ["Presumido", "Real"],
+    applicableClassificacoes: null,
+    applicableUFs: null,
+  },
 ];
 
 // Remove índices duplicados acumulados pelo alter:true (MySQL limite: 64 por tabela)
@@ -110,7 +152,7 @@ async function cleanupDuplicateIndexes() {
     for (const { TABLE_NAME, INDEX_NAME } of rows) {
       try {
         await sequelize.query(
-          `ALTER TABLE \`${TABLE_NAME}\` DROP INDEX \`${INDEX_NAME}\``
+          `ALTER TABLE \`${TABLE_NAME}\` DROP INDEX \`${INDEX_NAME}\``,
         );
       } catch (_) {
         // Ignora se o índice já não existir
@@ -123,26 +165,31 @@ async function cleanupDuplicateIndexes() {
 }
 
 cleanupDuplicateIndexes().then(() =>
-sequelize
-  .sync({ alter: false })
-  .then(async () => {
-    // Seed impostos padrão (findOrCreate — não duplica em restart)
-    for (const tax of DEFAULT_TAXES) {
-      await CompanyTax.findOrCreate({ where: { name: tax.name }, defaults: tax });
-    }
-    app.listen(process.env.PORT, process.env.HOST, () => {
-      logger.info(
-        `Servidor rodando em http://${process.env.HOST}:${process.env.PORT}`
-      );
-    });
+  sequelize
+    .sync({ alter: true })
+    .then(async () => {
+      // Seed impostos padrão (findOrCreate — não duplica em restart)
+      for (const tax of DEFAULT_TAXES) {
+        await CompanyTax.findOrCreate({
+          where: { name: tax.name },
+          defaults: tax,
+        });
+      }
+      app.listen(process.env.PORT, process.env.HOST, () => {
+        logger.info(
+          `Servidor rodando em http://${process.env.HOST}:${process.env.PORT}`,
+        );
+      });
 
-    // Cron: verificar lembretes de paralisações diariamente às 8h
-    const cron = require("node-cron");
-    const ActivitySuspensionController = require("./controllers/ActivitySuspensionController");
-    cron.schedule("0 8 * * *", async () => {
-      logger.info("Cron: verificando lembretes de paralisações...");
-      await ActivitySuspensionController.checkReminders();
-    });
-  })
-  .catch((err) => logger.error(`Erro ao sincronizar o banco de dados: ${err}`))
+      // Cron: verificar lembretes de paralisações diariamente às 8h
+      const cron = require("node-cron");
+      const ActivitySuspensionController = require("./controllers/ActivitySuspensionController");
+      cron.schedule("0 8 * * *", async () => {
+        logger.info("Cron: verificando lembretes de paralisações...");
+        await ActivitySuspensionController.checkReminders();
+      });
+    })
+    .catch((err) =>
+      logger.error(`Erro ao sincronizar o banco de dados: ${err}`),
+    ),
 );

@@ -3,6 +3,7 @@ const CompanyTax = require("../models/CompanyTax");
 const CompanyTaxStatus = require("../models/CompanyTaxStatus");
 const Company = require("../models/Company");
 const User = require("../models/User");
+const { Op } = require("sequelize");
 const logger = require("../logger/logger");
 const { getDeptConfig } = require("../config/departmentConfig");
 const cacheManager = require("../utils/CacheManager");
@@ -628,6 +629,50 @@ module.exports = class TaxController {
       return res.json({ message: `Imposto ${action === "add" ? "adicionado" : "removido"} para ${companyIds.length} empresa(s).` });
     } catch (err) {
       logger.error(`TaxController.batchUpdate: ${err.message}`);
+      return res.status(500).json({ message: err.message });
+    }
+  }
+
+  // POST /tax/:id/reimplementar  (admin only)
+  static async reimplementar(req, res) {
+    try {
+      const tax = await CompanyTax.findByPk(req.params.id);
+      if (!tax) return res.status(404).json({ message: "Imposto não encontrado." });
+
+      const period = getCurrentMonthPeriod();
+      const companies = await Company.findAll({ where: { isArchived: false, status: "ATIVA" } });
+
+      const [exclusions, manuals] = await Promise.all([
+        CompanyTaxStatus.findAll({ where: { taxId: tax.id, isManuallyExcluded: true }, attributes: ["companyId"], raw: true }),
+        CompanyTaxStatus.findAll({ where: { taxId: tax.id, isManuallyAssigned: true }, attributes: ["companyId"], raw: true }),
+      ]);
+      const excludedIds = new Set(exclusions.map((e) => e.companyId));
+      const manualIds   = new Set(manuals.map((m) => m.companyId));
+
+      let added = 0, removed = 0;
+      for (const company of companies) {
+        if (excludedIds.has(company.id)) continue;
+        if (taxMatchesCompany(tax, company) || manualIds.has(company.id)) {
+          const zeroed = isCompanyZeroedForDept(company, tax.department);
+          const [, created] = await CompanyTaxStatus.findOrCreate({
+            where: { companyId: company.id, taxId: tax.id, period },
+            defaults: { status: zeroed ? "disabled" : "pending" },
+          });
+          if (created) added++;
+        } else {
+          const count = await CompanyTaxStatus.destroy({
+            where: { companyId: company.id, taxId: tax.id, period, [Op.or]: [{ isManuallyAssigned: false }, { isManuallyAssigned: null }] },
+          });
+          removed += count;
+        }
+      }
+
+      cacheManager.invalidateByPrefix("tax_dashboard");
+      cacheManager.invalidateByPrefix("my_companies_");
+      logger.info(`Reimplementar imposto "${tax.name}" por ${req.user?.name}: +${added} -${removed}`);
+      return res.json({ added, removed });
+    } catch (err) {
+      logger.error(`TaxController.reimplementar: ${err.message}`);
       return res.status(500).json({ message: err.message });
     }
   }

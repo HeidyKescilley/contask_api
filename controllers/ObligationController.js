@@ -84,7 +84,7 @@ module.exports = class ObligationController {
       const {
         name, description, department, deadline, deadlineType,
         periodicity, deadlineMonth, sendWhenZeroed, applicableRegimes,
-        applicableClassificacoes, applicableUFs,
+        applicableClassificacoes, applicableUFs, baseReceiptsDir,
       } = req.body;
 
       if (!name || !department || !deadlineType || !periodicity) {
@@ -103,6 +103,7 @@ module.exports = class ObligationController {
         applicableRegimes: applicableRegimes || null,
         applicableClassificacoes: applicableClassificacoes || null,
         applicableUFs: applicableUFs || null,
+        baseReceiptsDir: baseReceiptsDir || null,
       });
 
       logger.info(`Obrigação "${name}" criada por ${req.user?.name}`);
@@ -123,7 +124,7 @@ module.exports = class ObligationController {
       const allowed = [
         "name", "description", "department", "deadline", "deadlineType",
         "periodicity", "deadlineMonth", "sendWhenZeroed", "applicableRegimes",
-        "applicableClassificacoes", "applicableUFs",
+        "applicableClassificacoes", "applicableUFs", "baseReceiptsDir",
       ];
       const updates = {};
       allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
@@ -381,6 +382,50 @@ module.exports = class ObligationController {
       return res.json({ message: `Obrigação ${action === "add" ? "adicionada" : "removida"} para ${companyIds.length} empresa(s).` });
     } catch (err) {
       logger.error(`ObligationController.batchUpdate: ${err.message}`);
+      return res.status(500).json({ message: err.message });
+    }
+  }
+
+  // POST /obligation/:id/reimplementar  (admin only)
+  static async reimplementar(req, res) {
+    try {
+      const obligation = await AccessoryObligation.findByPk(req.params.id);
+      if (!obligation) return res.status(404).json({ message: "Obrigação não encontrada." });
+
+      const period = getCurrentPeriod(obligation);
+      const companies = await Company.findAll({ where: { isArchived: false, status: "ATIVA" } });
+
+      const [exclusions, manuals] = await Promise.all([
+        CompanyObligationStatus.findAll({ where: { obligationId: obligation.id, isManuallyExcluded: true }, attributes: ["companyId"], raw: true }),
+        CompanyObligationStatus.findAll({ where: { obligationId: obligation.id, isManuallyAssigned: true }, attributes: ["companyId"], raw: true }),
+      ]);
+      const excludedIds = new Set(exclusions.map((e) => e.companyId));
+      const manualIds   = new Set(manuals.map((m) => m.companyId));
+
+      let added = 0, removed = 0;
+      for (const company of companies) {
+        if (excludedIds.has(company.id)) continue;
+        if (obligationMatchesCompany(obligation, company) || manualIds.has(company.id)) {
+          const shouldDisable = !obligation.sendWhenZeroed && company.isZeroedFiscal;
+          const [, created] = await CompanyObligationStatus.findOrCreate({
+            where: { companyId: company.id, obligationId: obligation.id, period },
+            defaults: { status: shouldDisable ? "disabled" : "pending" },
+          });
+          if (created) added++;
+        } else {
+          const count = await CompanyObligationStatus.destroy({
+            where: { companyId: company.id, obligationId: obligation.id, period, [Op.or]: [{ isManuallyAssigned: false }, { isManuallyAssigned: null }] },
+          });
+          removed += count;
+        }
+      }
+
+      cacheManager.invalidateByPrefix("obl_dashboard");
+      cacheManager.invalidateByPrefix("my_companies_");
+      logger.info(`Reimplementar obrigação "${obligation.name}" por ${req.user?.name}: +${added} -${removed}`);
+      return res.json({ added, removed });
+    } catch (err) {
+      logger.error(`ObligationController.reimplementar: ${err.message}`);
       return res.status(500).json({ message: err.message });
     }
   }
