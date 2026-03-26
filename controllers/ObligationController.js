@@ -385,7 +385,17 @@ module.exports = class ObligationController {
           updateOnDuplicate: ["isManuallyAssigned"],
         });
       } else {
-        await CompanyObligationStatus.destroy({ where: { companyId: companyIds, obligationId, isManuallyAssigned: true } });
+        // remove: exclui manualmente para todos os companyIds (manual ou auto-atribuído)
+        // Passo 1: apaga TODOS os registros existentes para essas empresas + obligationId
+        await CompanyObligationStatus.destroy({ where: { companyId: companyIds, obligationId } });
+        // Passo 2: cria registros com isManuallyExcluded para bloquear re-atribuição automática
+        const toExclude = companyIds.map((companyId) => ({
+          companyId, obligationId, period, status: "disabled",
+          isManuallyAssigned: false, isManuallyExcluded: true,
+        }));
+        await CompanyObligationStatus.bulkCreate(toExclude, {
+          updateOnDuplicate: ["isManuallyExcluded", "status"],
+        });
       }
 
       cacheManager.invalidateByPrefix("obl_dashboard");

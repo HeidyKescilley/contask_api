@@ -623,8 +623,17 @@ module.exports = class TaxController {
           updateOnDuplicate: ["isManuallyAssigned"],
         });
       } else {
-        // remove: apaga registros manualmente atribuídos
-        await CompanyTaxStatus.destroy({ where: { companyId: companyIds, taxId, isManuallyAssigned: true } });
+        // remove: exclui manualmente para todos os companyIds (manual ou auto-atribuído)
+        // Passo 1: apaga TODOS os registros existentes para essas empresas + taxId
+        await CompanyTaxStatus.destroy({ where: { companyId: companyIds, taxId } });
+        // Passo 2: cria registros com isManuallyExcluded para bloquear re-atribuição automática
+        const toExclude = companyIds.map((companyId) => ({
+          companyId, taxId, period, status: "disabled",
+          isManuallyAssigned: false, isManuallyExcluded: true,
+        }));
+        await CompanyTaxStatus.bulkCreate(toExclude, {
+          updateOnDuplicate: ["isManuallyExcluded", "status"],
+        });
       }
 
       cacheManager.invalidateByPrefix("tax_dashboard");
