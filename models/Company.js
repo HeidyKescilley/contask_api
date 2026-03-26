@@ -166,6 +166,15 @@ const Company = db.define(
       allowNull: false,
       defaultValue: false,
     },
+    isZeroedContabil: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    contabilCompletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     timestamps: true,

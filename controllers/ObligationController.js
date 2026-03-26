@@ -11,7 +11,8 @@ const {
   formatDeadline,
 } = require("../utils/businessDays");
 const cacheManager = require("../utils/CacheManager");
-const { checkAndUpdateFiscalCompletion } = require("../utils/fiscalCompletionChecker");
+const { checkAndUpdateCompletion } = require("../utils/completionChecker");
+const { getDeptConfig } = require("../config/departmentConfig");
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -34,15 +35,23 @@ function obligationMatchesCompany(obligation, company) {
 }
 
 /**
+ * Verifica se uma obrigação deve ser desabilitada para uma empresa zerada.
+ */
+function isObligationDisabledForCompany(obligation, company) {
+  if (obligation.sendWhenZeroed) return false;
+  const cfg = getDeptConfig(obligation.department);
+  if (!cfg?.isZeroed) return false;
+  return !!company[cfg.isZeroed];
+}
+
+/**
  * Retorna ou cria o registro de status para uma empresa/obrigação/período.
  * Aplica lógica de desabilitação automática (zerado + sendWhenZeroed=false).
  */
 async function getOrCreateStatus(company, obligation, period) {
   // Determina status inicial
-  let initialStatus = "pending";
-  if (!obligation.sendWhenZeroed && company.isZeroedFiscal) {
-    initialStatus = "disabled";
-  }
+  const disabled = isObligationDisabledForCompany(obligation, company);
+  const initialStatus = disabled ? "disabled" : "pending";
 
   const [statusRecord] = await CompanyObligationStatus.findOrCreate({
     where: { companyId: company.id, obligationId: obligation.id, period },
@@ -50,7 +59,7 @@ async function getOrCreateStatus(company, obligation, period) {
   });
 
   // Se empresa ficou zerada após o registro ser criado, atualiza para disabled
-  if (!obligation.sendWhenZeroed && company.isZeroedFiscal && statusRecord.status === "pending") {
+  if (disabled && statusRecord.status === "pending") {
     await statusRecord.update({ status: "disabled" });
     statusRecord.status = "disabled";
   }
@@ -290,7 +299,7 @@ module.exports = class ObligationController {
       const [statusRecord, created] = await CompanyObligationStatus.findOrCreate({
         where: { companyId, obligationId, period: activePeriod },
         defaults: {
-          status: !obligation.sendWhenZeroed && company.isZeroedFiscal ? "disabled" : "pending",
+          status: isObligationDisabledForCompany(obligation, company) ? "disabled" : "pending",
           isManuallyAssigned: true,
         },
       });
@@ -333,10 +342,12 @@ module.exports = class ObligationController {
       await record.update(updates);
       cacheManager.invalidateByPrefix("obl_dashboard");
 
-      // Verifica e atualiza fiscalCompletedAt da empresa (fire-and-forget assíncrono)
-      // Usa o período do mês atual como referência para os impostos
+      // Verifica e atualiza completedAt do departamento (fire-and-forget assíncrono)
+      const obligation = await AccessoryObligation.findByPk(record.obligationId, { attributes: ["department"], raw: true });
       const taxPeriod = record.period.length === 7 ? record.period : record.period.substring(0, 7);
-      checkAndUpdateFiscalCompletion(record.companyId, taxPeriod).catch(() => {});
+      if (obligation) {
+        checkAndUpdateCompletion(record.companyId, taxPeriod, obligation.department).catch(() => {});
+      }
 
       return res.json(record);
     } catch (err) {
@@ -363,7 +374,7 @@ module.exports = class ObligationController {
         const companies = await Company.findAll({ where: { id: companyIds } });
         const toCreate = [];
         for (const company of companies) {
-          const shouldBeDisabled = !obligation.sendWhenZeroed && company.isZeroedFiscal;
+          const shouldBeDisabled = isObligationDisabledForCompany(obligation, company);
           toCreate.push({
             companyId: company.id, obligationId, period,
             status: shouldBeDisabled ? "disabled" : "pending",
@@ -406,7 +417,7 @@ module.exports = class ObligationController {
       for (const company of companies) {
         if (excludedIds.has(company.id)) continue;
         if (obligationMatchesCompany(obligation, company) || manualIds.has(company.id)) {
-          const shouldDisable = !obligation.sendWhenZeroed && company.isZeroedFiscal;
+          const shouldDisable = isObligationDisabledForCompany(obligation, company);
           const [, created] = await CompanyObligationStatus.findOrCreate({
             where: { companyId: company.id, obligationId: obligation.id, period },
             defaults: { status: shouldDisable ? "disabled" : "pending" },
@@ -440,7 +451,7 @@ module.exports = class ObligationController {
         await CompanyObligationStatus.findOrCreate({
           where: { companyId: company.id, obligationId: obl.id, period },
           defaults: {
-            status: !obl.sendWhenZeroed && company.isZeroedFiscal ? "disabled" : "pending",
+            status: isObligationDisabledForCompany(obl, company) ? "disabled" : "pending",
           },
         });
       }
@@ -528,7 +539,7 @@ module.exports = class ObligationController {
           if (!obligationMatchesCompany(obl, company) && !manualIds.has(obl.id)) continue;
 
           const oblPeriod = oblPeriods[obl.id];
-          const shouldBeDisabled = !obl.sendWhenZeroed && company.isZeroedFiscal;
+          const shouldBeDisabled = isObligationDisabledForCompany(obl, company);
           const expectedStatus = shouldBeDisabled ? "disabled" : "pending";
           const key = `${company.id}_${obl.id}_${oblPeriod}`;
           const existing = statusMap.get(key);
@@ -564,7 +575,8 @@ module.exports = class ObligationController {
             uf: company.uf,
             rule: company.rule,
             isZeroedFiscal: company.isZeroedFiscal,
-            sentToClientFiscal: company.sentToClientFiscal,
+            isZeroedDp: company.isZeroedDp,
+            isZeroedContabil: company.isZeroedContabil,
             obligations: companyObligations,
             total: companyObligations.length,
             completed: companyObligations.filter((o) => o.status === "completed").length,
@@ -631,7 +643,7 @@ module.exports = class ObligationController {
           AccessoryObligation.findAll({ where: { department } }),
           Company.findAll({
             where: { isArchived: false, status: "ATIVA" },
-            attributes: ["id", "respFiscalId", "respDpId", "respContabilId", "isZeroedFiscal", "rule", "classi", "uf"],
+            attributes: ["id", "respFiscalId", "respDpId", "respContabilId", "isZeroedFiscal", "isZeroedDp", "isZeroedContabil", "rule", "classi", "uf"],
             raw: true,
           }),
           User.findAll({
@@ -723,7 +735,7 @@ module.exports = class ObligationController {
 
             // Sem registro: inferir status esperado sem tocar o banco
             if (status === undefined) {
-              status = (!obl.sendWhenZeroed && company.isZeroedFiscal) ? "disabled" : "pending";
+              status = isObligationDisabledForCompany(obl, company) ? "disabled" : "pending";
             }
 
             const stats = obligationStats[obl.id];
@@ -806,6 +818,8 @@ module.exports = class ObligationController {
           uf: company.uf,
           rule: company.rule,
           isZeroedFiscal: company.isZeroedFiscal,
+          isZeroedDp: company.isZeroedDp,
+          isZeroedContabil: company.isZeroedContabil,
           respFiscalId: company.respFiscalId,
           respFiscalName: company.respFiscal?.name || null,
           status: statusRecord.status,

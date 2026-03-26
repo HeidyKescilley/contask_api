@@ -177,3 +177,10 @@ User.hasMany(ActivitySuspension, { foreignKey: "createdById", as: "createdSuspen
 ActivitySuspension.belongsTo(User, { foreignKey: "createdById", as: "createdBy" });
 User.hasMany(ActivitySuspension, { foreignKey: "endedById", as: "endedSuspensions" });
 ActivitySuspension.belongsTo(User, { foreignKey: "endedById", as: "endedBy" });
+
+// Associações para Orientações de Empresa
+const CompanyOrientation = require("./CompanyOrientation");
+Company.hasMany(CompanyOrientation, { foreignKey: "companyId", as: "orientations", onDelete: "CASCADE" });
+CompanyOrientation.belongsTo(Company, { foreignKey: "companyId", as: "company" });
+User.hasMany(CompanyOrientation, { foreignKey: "createdById", as: "createdOrientations" });
+CompanyOrientation.belongsTo(User, { foreignKey: "createdById", as: "createdBy" });

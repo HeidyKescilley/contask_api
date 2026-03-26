@@ -27,7 +27,9 @@ const {
 } = require("../config/departmentConfig");
 const CompanyTaxStatus = require("../models/CompanyTaxStatus");
 const CompanyObligationStatus = require("../models/CompanyObligationStatus");
-const { checkAndUpdateFiscalCompletion } = require("../utils/fiscalCompletionChecker");
+const { checkAndUpdateCompletion } = require("../utils/completionChecker");
+const CompanyTax = require("../models/CompanyTax");
+const AccessoryObligation = require("../models/AccessoryObligation");
 
 function getCurrentMonthPeriod(date = new Date()) {
   const y = date.getFullYear();
@@ -72,6 +74,8 @@ const COMPANY_ATTRIBUTES = [
   "fiscalCompletedAt",
   "dpCompletedAt",
   "hasNoDpObligations",
+  "isZeroedContabil",
+  "contabilCompletedAt",
 ];
 
 // Includes padrão para queries de Company
@@ -616,7 +620,7 @@ module.exports = class CompanyController {
       for (const [deptName, config] of Object.entries(getAllDeptConfigs())) {
         if (user.department !== deptName && user.role !== "admin") continue;
 
-        // Contábil: só tem bonusField (accountingMonthsCount)
+        // Bonus field (todos os departamentos)
         if (config.bonusField && config.bonusField in agentData) {
           updatePayload[config.bonusField] =
             agentData[config.bonusField] === ""
@@ -624,34 +628,30 @@ module.exports = class CompanyController {
               : parseInt(agentData[config.bonusField], 10);
         }
 
-        // Departamentos com sentToClient/declarations (Fiscal e Pessoal)
-        if (!config.sentToClient) continue;
-
-        if (config.sentToClient in agentData)
-          updatePayload[config.sentToClient] = agentData[config.sentToClient];
-
-        if (config.declarationsCompleted in agentData)
-          updatePayload[config.declarationsCompleted] =
-            agentData[config.declarationsCompleted];
-
-        if (config.isZeroed in agentData) {
+        // isZeroed (todos os departamentos com obligationsEnabled)
+        if (config.obligationsEnabled && config.isZeroed && config.isZeroed in agentData) {
           updatePayload[config.isZeroed] = agentData[config.isZeroed];
         }
 
-        if (config.hasNoObligations in agentData) {
-          updatePayload[config.hasNoObligations] =
-            agentData[config.hasNoObligations];
-          if (agentData[config.hasNoObligations]) {
-            updatePayload[config.declarationsCompleted] = false;
-          }
+        // Campos legados que ainda existem no DB (ex: sentToClientFiscal)
+        if (config.sentToClient && config.sentToClient in agentData) {
+          updatePayload[config.sentToClient] = agentData[config.sentToClient];
+        }
+        if (config.declarationsCompleted && config.declarationsCompleted in agentData) {
+          updatePayload[config.declarationsCompleted] = agentData[config.declarationsCompleted];
+        }
+        if (config.hasNoObligations && config.hasNoObligations in agentData) {
+          updatePayload[config.hasNoObligations] = agentData[config.hasNoObligations];
         }
       }
 
-      // Lógica de timestamp de conclusão — loop genérico
+      // Lógica de timestamp de conclusão — apenas para departamentos SEM obligationsEnabled
+      // (os que têm obligationsEnabled usam o checker assíncrono via impostos/obrigações)
       const potentialNewState = { ...previousState, ...updatePayload };
 
-      for (const config of Object.values(getAllDeptConfigs())) {
-        if (!config.completedAt) continue;
+      for (const [, config] of Object.entries(getAllDeptConfigs())) {
+        if (config.obligationsEnabled) continue; // usa checker, não calcular aqui
+        if (!config.completedAt || !config.sentToClient) continue;
 
         const isNormallyCompleted =
           potentialNewState[config.sentToClient] &&
@@ -670,29 +670,50 @@ module.exports = class CompanyController {
 
       await company.update(updatePayload);
 
-      // Quando isZeroedFiscal é DESMARCADO: reativar statuses que foram desabilitados automaticamente
-      if ("isZeroedFiscal" in agentData && !agentData.isZeroedFiscal && previousState.isZeroedFiscal) {
-        const currentMonth = getCurrentMonthPeriod();
-        const currentYear = currentMonth.substring(0, 4);
-        await Promise.all([
-          CompanyTaxStatus.update(
-            { status: "pending" },
-            { where: { companyId, period: currentMonth, status: "disabled", isManuallyExcluded: false } }
-          ),
-          CompanyObligationStatus.update(
-            { status: "pending" },
-            { where: { companyId, period: { [Op.like]: `${currentMonth}%` }, status: "disabled", isManuallyExcluded: false } }
-          ),
-          CompanyObligationStatus.update(
-            { status: "pending" },
-            { where: { companyId, period: currentYear, status: "disabled", isManuallyExcluded: false } }
-          ),
-        ]);
-      }
+      // Processar toggles de isZeroed para todos os departamentos com obligationsEnabled
+      const currentMonth = getCurrentMonthPeriod();
+      const currentYear = currentMonth.substring(0, 4);
 
-      // Quando isZeroedFiscal é MARCADO: desabilitar impostos e obrigações (sendWhenZeroed=false)
-      if ("isZeroedFiscal" in agentData && agentData.isZeroedFiscal && !previousState.isZeroedFiscal) {
-        checkAndUpdateFiscalCompletion(companyId, getCurrentMonthPeriod()).catch(() => {});
+      for (const [deptName, cfg] of Object.entries(getAllDeptConfigs())) {
+        if (!cfg.obligationsEnabled || !cfg.isZeroed) continue;
+        const field = cfg.isZeroed;
+        if (!(field in agentData)) continue;
+
+        const wasZeroed = previousState[field];
+        const nowZeroed = agentData[field];
+
+        if (!nowZeroed && wasZeroed) {
+          // Desmarcado: reativar impostos e obrigações desabilitados para esse departamento
+          const [taxIds, oblIds] = await Promise.all([
+            CompanyTax.findAll({ where: { department: deptName }, attributes: ["id"], raw: true }).then((r) => r.map((t) => t.id)),
+            AccessoryObligation.findAll({ where: { department: deptName }, attributes: ["id"], raw: true }).then((r) => r.map((o) => o.id)),
+          ]);
+          const ops = [];
+          if (taxIds.length) {
+            ops.push(CompanyTaxStatus.update(
+              { status: "pending" },
+              { where: { companyId, taxId: taxIds, period: currentMonth, status: "disabled", isManuallyExcluded: false } }
+            ));
+          }
+          if (oblIds.length) {
+            ops.push(
+              CompanyObligationStatus.update(
+                { status: "pending" },
+                { where: { companyId, obligationId: oblIds, period: { [Op.like]: `${currentMonth}%` }, status: "disabled", isManuallyExcluded: false } }
+              ),
+              CompanyObligationStatus.update(
+                { status: "pending" },
+                { where: { companyId, obligationId: oblIds, period: currentYear, status: "disabled", isManuallyExcluded: false } }
+              )
+            );
+          }
+          if (ops.length) await Promise.all(ops);
+        }
+
+        if (nowZeroed && !wasZeroed) {
+          // Marcado: executar checker para atualizar conclusão
+          checkAndUpdateCompletion(companyId, currentMonth, deptName).catch(() => {});
+        }
       }
 
       logger.info(

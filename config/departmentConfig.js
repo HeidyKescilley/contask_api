@@ -12,18 +12,19 @@ const DEPARTMENT_CONFIG = {
   Pessoal: {
     responsibleField: "respDpId",
     responsibleAlias: "respDp",
-    sentToClient: "sentToClientDp",
-    declarationsCompleted: "declarationsCompletedDp",
     isZeroed: "isZeroedDp",
-    hasNoObligations: "hasNoDpObligations",
     completedAt: "dpCompletedAt",
     bonusField: "employeesCount",
     zeroedBonusDefault: 0,
+    obligationsEnabled: true,
   },
   Contábil: {
     responsibleField: "respContabilId",
     responsibleAlias: "respContabil",
+    isZeroed: "isZeroedContabil",
+    completedAt: "contabilCompletedAt",
     bonusField: "accountingMonthsCount",
+    obligationsEnabled: true,
   },
 };
 

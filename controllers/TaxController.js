@@ -7,7 +7,7 @@ const { Op } = require("sequelize");
 const logger = require("../logger/logger");
 const { getDeptConfig } = require("../config/departmentConfig");
 const cacheManager = require("../utils/CacheManager");
-const { checkAndUpdateFiscalCompletion } = require("../utils/fiscalCompletionChecker");
+const { checkAndUpdateCompletion } = require("../utils/completionChecker");
 
 // ── Período atual (sempre mensal) ──────────────────────────────────────────────
 function getCurrentMonthPeriod(date = new Date()) {
@@ -119,16 +119,18 @@ module.exports = class TaxController {
     }
   }
 
-  // GET /tax/company/:companyId?period=YYYY-MM
+  // GET /tax/company/:companyId?period=YYYY-MM&department=Fiscal
   static async getCompanyTaxes(req, res) {
     try {
       const { companyId } = req.params;
       const period = req.query.period || getCurrentMonthPeriod();
+      const { department } = req.query;
 
       const company = await Company.findByPk(companyId);
       if (!company) return res.status(404).json({ message: "Empresa não encontrada." });
 
-      const allTaxes = await CompanyTax.findAll({ order: [["department", "ASC"], ["name", "ASC"]] });
+      const taxWhere = department ? { department } : {};
+      const allTaxes = await CompanyTax.findAll({ where: taxWhere, order: [["department", "ASC"], ["name", "ASC"]] });
 
       const manualStatuses = await CompanyTaxStatus.findAll({
         where: { companyId, isManuallyAssigned: true },
@@ -246,8 +248,9 @@ module.exports = class TaxController {
       });
       cacheManager.invalidateByPrefix("tax_dashboard");
 
-      // Verifica e atualiza fiscalCompletedAt da empresa (fire-and-forget assíncrono)
-      checkAndUpdateFiscalCompletion(record.companyId, record.period).catch(() => {});
+      // Verifica e atualiza completedAt do departamento (fire-and-forget assíncrono)
+      const tax = await CompanyTax.findByPk(record.taxId, { attributes: ["department"], raw: true });
+      if (tax) checkAndUpdateCompletion(record.companyId, record.period, tax.department).catch(() => {});
 
       return res.json(record);
     } catch (err) {
