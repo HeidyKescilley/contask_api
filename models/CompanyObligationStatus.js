@@ -19,7 +19,7 @@ const CompanyObligationStatus = db.define("CompanyObligationStatus", {
     comment: "YYYY-MM (mensal), YYYY-MM-1 ou YYYY-MM-2 (quinzenal), YYYY (anual)",
   },
   status: {
-    type: DataTypes.ENUM("pending", "completed", "disabled"),
+    type: DataTypes.ENUM("pending", "completed", "disabled", "not_applicable"),
     allowNull: false,
     defaultValue: "pending",
   },

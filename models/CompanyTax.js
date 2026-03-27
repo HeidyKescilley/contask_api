@@ -29,6 +29,13 @@ const CompanyTax = db.define("CompanyTax", {
     allowNull: true,
     comment: "null = aplica a todas as UFs",
   },
+  periodicity: {
+    type: DataTypes.ENUM("decendial", "quinzenal", "mensal", "trimestral"),
+    allowNull: false,
+    defaultValue: "mensal",
+    comment:
+      "Frequência de apuração. 'trimestral' = apenas meses 3,6,9,12. 'decendial'/'quinzenal' = mensal com subdivisões de pagamento.",
+  },
 });
 
 module.exports = CompanyTax;

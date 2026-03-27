@@ -42,6 +42,12 @@ const AccessoryObligation = db.define("AccessoryObligation", {
     defaultValue: true,
     comment: "Se false, obrigação é desabilitada para empresas zeradas",
   },
+  isConditional: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    comment: "Se true, o agente pode dispensar esta obrigação para uma empresa em um período específico.",
+  },
   applicableRegimes: {
     type: DataTypes.JSON,
     allowNull: true,

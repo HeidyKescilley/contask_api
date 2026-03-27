@@ -75,6 +75,14 @@ router.get(
   ContactModeController.getAllContactModes
 );
 
+// Conclusão de empresas para um período específico (somente leitura, sem criar registros)
+router.get(
+  "/period-completion",
+  verifyToken,
+  activityLogger,
+  CompanyController.getPeriodCompletion
+);
+
 // Rota parametrizada deve ser a última
 router.get("/:id", verifyToken, activityLogger, CompanyController.getOne);
 

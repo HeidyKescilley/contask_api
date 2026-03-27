@@ -16,6 +16,50 @@ const { getDeptConfig } = require("../config/departmentConfig");
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+// Retorna o período do mês atual no formato YYYY-MM
+function getCurrentMonthPeriod(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+/**
+ * Retorna false para obrigações anuais cujo deadlineMonth não corresponde ao mês
+ * do displayPeriod fornecido. Obrigações anuais aparecem no mês ANTERIOR ao vencimento.
+ * Para obrigações mensais/quinzenais: sempre true.
+ */
+function obligationIsActiveForPeriod(obligation, displayPeriod) {
+  if (obligation.periodicity !== "annual") return true;
+  if (!obligation.deadlineMonth) return true; // segurança: exibir se não configurado
+  const displayMonth = parseInt(displayPeriod.split("-")[1], 10);
+  // Exibe no mês anterior ao vencimento (ex: deadlineMonth=3 → exibe em fev=2)
+  const expectedDisplay = obligation.deadlineMonth === 1 ? 12 : obligation.deadlineMonth - 1;
+  return displayMonth === expectedDisplay;
+}
+
+/**
+ * Resolve o(s) período(s) de banco para uma obrigação dado um displayPeriod YYYY-MM.
+ * - Mensal: "YYYY-MM"
+ * - Quinzenal: ["YYYY-MM-1", "YYYY-MM-2"] (ambas as quinzenas)
+ * - Anual: "YYYY"
+ * Se displayPeriod não for fornecido, usa getCurrentPeriod(obligation).
+ */
+function getObligationPeriodForDisplay(obligation, displayPeriod) {
+  if (!displayPeriod) return getCurrentPeriod(obligation);
+  if (obligation.periodicity === "biweekly") {
+    return [`${displayPeriod}-1`, `${displayPeriod}-2`];
+  }
+  if (obligation.periodicity === "annual") {
+    const [displayYear, displayMonthNum] = displayPeriod.split("-").map(Number);
+    // Se vence em janeiro e exibimos em dezembro → o registro de DB pertence ao próximo ano
+    if (obligation.deadlineMonth === 1 && displayMonthNum === 12) {
+      return String(displayYear + 1);
+    }
+    return String(displayYear);
+  }
+  return displayPeriod;
+}
+
 /**
  * Verifica se uma obrigação se aplica a uma empresa com base nos filtros.
  */
@@ -92,7 +136,7 @@ module.exports = class ObligationController {
     try {
       const {
         name, description, department, deadline, deadlineType,
-        periodicity, deadlineMonth, sendWhenZeroed, applicableRegimes,
+        periodicity, deadlineMonth, sendWhenZeroed, isConditional, applicableRegimes,
         applicableClassificacoes, applicableUFs, baseReceiptsDir,
       } = req.body;
 
@@ -109,6 +153,7 @@ module.exports = class ObligationController {
         deadlineType, periodicity,
         deadlineMonth: periodicity === "annual" && deadlineMonth ? parseInt(deadlineMonth, 10) : null,
         sendWhenZeroed: sendWhenZeroed !== false,
+        isConditional: isConditional === true,
         applicableRegimes: applicableRegimes || null,
         applicableClassificacoes: applicableClassificacoes || null,
         applicableUFs: applicableUFs || null,
@@ -132,7 +177,7 @@ module.exports = class ObligationController {
 
       const allowed = [
         "name", "description", "department", "deadline", "deadlineType",
-        "periodicity", "deadlineMonth", "sendWhenZeroed", "applicableRegimes",
+        "periodicity", "deadlineMonth", "sendWhenZeroed", "isConditional", "applicableRegimes",
         "applicableClassificacoes", "applicableUFs", "baseReceiptsDir",
       ];
       const updates = {};
@@ -199,37 +244,50 @@ module.exports = class ObligationController {
         }
       }
 
-      // Para cada obrigação aplicável, busca ou cria o status do período atual
-      const period = req.query.period || getCurrentPeriod({ periodicity: "monthly" });
+      // Para cada obrigação aplicável, busca ou cria o status do período solicitado
+      const displayPeriod = req.query.period || null; // YYYY-MM fornecido pelo frontend
       const result = [];
 
       for (const obl of applicableObligations) {
-        const oblPeriod = req.query.period || getCurrentPeriod(obl);
-        const statusRecord = await getOrCreateStatus(company, obl, oblPeriod);
+        // Anuais: só exibir no mês correto
+        if (displayPeriod && !obligationIsActiveForPeriod(obl, displayPeriod)) continue;
 
-        let deadlineDate = null;
-        try {
-          deadlineDate = await getDeadlineDate(obl, oblPeriod);
-        } catch {}
+        const resolvedPeriods = getObligationPeriodForDisplay(obl, displayPeriod);
+        const periods = Array.isArray(resolvedPeriods) ? resolvedPeriods : [resolvedPeriods];
+        const labels = periods.length > 1 ? ["1ª Quinzena", "2ª Quinzena"] : [null];
 
-        result.push({
-          ...obl.toJSON(),
-          statusId: statusRecord.id,
-          status: statusRecord.status,
-          completedAt: statusRecord.completedAt,
-          completedById: statusRecord.completedById,
-          isManuallyAssigned: manualObligationIds.has(obl.id),
-          isManuallyExcluded: false,
-          period: oblPeriod,
-          deadlineDate: deadlineDate ? deadlineDate.toISOString() : null,
-          deadlineFormatted: deadlineDate ? formatDeadline(deadlineDate) : null,
-        });
+        for (let pi = 0; pi < periods.length; pi++) {
+          const oblPeriod = periods[pi];
+          const label = labels[pi];
+          const statusRecord = await getOrCreateStatus(company, obl, oblPeriod);
+
+          let deadlineDate = null;
+          try {
+            deadlineDate = await getDeadlineDate(obl, oblPeriod);
+          } catch {}
+
+          result.push({
+            ...obl.toJSON(),
+            name: label ? `${obl.name} (${label})` : obl.name,
+            statusId: statusRecord.id,
+            status: statusRecord.status,
+            completedAt: statusRecord.completedAt,
+            completedById: statusRecord.completedById,
+            isManuallyAssigned: manualObligationIds.has(obl.id),
+            isManuallyExcluded: false,
+            period: oblPeriod,
+            deadlineDate: deadlineDate ? deadlineDate.toISOString() : null,
+            deadlineFormatted: deadlineDate ? formatDeadline(deadlineDate) : null,
+          });
+        }
       }
 
       // Inclui obrigações excluídas manualmente na resposta (para exibir no form de edição)
       for (const statusRec of excludedStatuses) {
         const obl = allObligations.find((o) => o.id === statusRec.obligationId);
         if (!obl) continue;
+        if (displayPeriod && !obligationIsActiveForPeriod(obl, displayPeriod)) continue;
+        const fallbackPeriod = getObligationPeriodForDisplay(obl, displayPeriod);
         result.push({
           ...obl.toJSON(),
           statusId: statusRec.id,
@@ -238,7 +296,7 @@ module.exports = class ObligationController {
           completedById: null,
           isManuallyAssigned: false,
           isManuallyExcluded: true,
-          period: req.query.period || getCurrentPeriod(obl),
+          period: Array.isArray(fallbackPeriod) ? fallbackPeriod[0] : fallbackPeriod,
           deadlineDate: null,
           deadlineFormatted: null,
         });
@@ -317,13 +375,13 @@ module.exports = class ObligationController {
   }
 
   // PATCH /obligation/status/:statusId
-  // Body: { status: "pending"|"completed"|"disabled" }
+  // Body: { status: "pending"|"completed"|"disabled"|"not_applicable" }
   static async updateStatus(req, res) {
     try {
       const { statusId } = req.params;
       const { status } = req.body;
 
-      if (!["pending", "completed", "disabled"].includes(status)) {
+      if (!["pending", "completed", "disabled", "not_applicable"].includes(status)) {
         return res.status(400).json({ message: "Status inválido." });
       }
 
@@ -480,14 +538,22 @@ module.exports = class ObligationController {
       if (obligations.length === 0) return res.json({ obligations: [], companies: [] });
 
       // Pré-computar período por obrigação (suporte a múltiplas periodicidades)
-      const oblPeriods = {};
+      const displayPeriod = req.query.period || null;
+      const isCurrentPeriod = !displayPeriod || displayPeriod <= getCurrentMonthPeriod();
+
+      const oblPeriods = {}; // obl.id -> string | string[]
       const periodSet = new Set();
+      const visibleObligations = []; // apenas as que devem aparecer neste displayPeriod
+
       for (const obl of obligations) {
-        const p = req.query.period || getCurrentPeriod(obl);
+        if (displayPeriod && !obligationIsActiveForPeriod(obl, displayPeriod)) continue;
+        const p = getObligationPeriodForDisplay(obl, displayPeriod);
         oblPeriods[obl.id] = p;
-        periodSet.add(p);
+        if (Array.isArray(p)) { p.forEach((x) => periodSet.add(x)); } else { periodSet.add(p); }
+        visibleObligations.push(obl);
       }
-      const period = req.query.period || getCurrentPeriod(obligations[0]);
+
+      const period = displayPeriod || getCurrentPeriod(obligations[0]);
 
       const companies = await Company.findAll({ where: { isArchived: false, status: "ATIVA" } });
       if (companies.length === 0) return res.json({ period, obligations, companies: [] });
@@ -544,36 +610,51 @@ module.exports = class ObligationController {
         const manualIds = manualMap.get(company.id) || new Set();
         const companyObligations = [];
 
-        for (const obl of obligations) {
+        for (const obl of visibleObligations) {
           if (excludedIds.has(obl.id)) continue;
           if (!obligationMatchesCompany(obl, company) && !manualIds.has(obl.id)) continue;
 
-          const oblPeriod = oblPeriods[obl.id];
-          const shouldBeDisabled = isObligationDisabledForCompany(obl, company);
-          const expectedStatus = shouldBeDisabled ? "disabled" : "pending";
-          const key = `${company.id}_${obl.id}_${oblPeriod}`;
-          const existing = statusMap.get(key);
+          // Quinzenal pode ter 2 períodos; mensal/anual tem 1
+          const periods = Array.isArray(oblPeriods[obl.id]) ? oblPeriods[obl.id] : [oblPeriods[obl.id]];
+          const labels = periods.length > 1 ? ["1ª Quinzena", "2ª Quinzena"] : [null];
 
-          if (!existing) {
-            toCreate.push({ companyId: company.id, obligationId: obl.id, period: oblPeriod, status: expectedStatus });
-            companyObligations.push({
-              obligationId: obl.id, name: obl.name,
-              statusId: null, status: expectedStatus, completedAt: null,
-              _key: key,
-            });
-          } else {
-            if (shouldBeDisabled && existing.status === "pending") {
-              toDisable.push(existing.id);
-              existing.status = "disabled";
-            } else if (!shouldBeDisabled && existing.status === "disabled") {
-              // Empresa deixou de ser zerada: reabilitar obrigação automaticamente
-              toEnable.push(existing.id);
-              existing.status = "pending";
+          for (let pi = 0; pi < periods.length; pi++) {
+            const oblPeriod = periods[pi];
+            const label = labels[pi];
+            const displayName = label ? `${obl.name} (${label})` : obl.name;
+            const shouldBeDisabled = isObligationDisabledForCompany(obl, company);
+            const expectedStatus = shouldBeDisabled ? "disabled" : "pending";
+            const key = `${company.id}_${obl.id}_${oblPeriod}`;
+            const existing = statusMap.get(key);
+
+            if (!existing) {
+              if (isCurrentPeriod) {
+                toCreate.push({ companyId: company.id, obligationId: obl.id, period: oblPeriod, status: expectedStatus });
+                companyObligations.push({
+                  obligationId: obl.id, name: displayName, period: oblPeriod,
+                  statusId: null, status: expectedStatus, completedAt: null,
+                  _key: key,
+                });
+              } else {
+                companyObligations.push({
+                  obligationId: obl.id, name: displayName, period: oblPeriod,
+                  statusId: null, status: expectedStatus, completedAt: null,
+                });
+              }
+            } else {
+              if (shouldBeDisabled && existing.status === "pending") {
+                if (isCurrentPeriod) toDisable.push(existing.id);
+                existing.status = "disabled";
+              } else if (!shouldBeDisabled && existing.status === "disabled") {
+                // Empresa deixou de ser zerada: reabilitar obrigação automaticamente
+                if (isCurrentPeriod) toEnable.push(existing.id);
+                if (isCurrentPeriod) existing.status = "pending";
+              }
+              companyObligations.push({
+                obligationId: obl.id, name: displayName, period: oblPeriod,
+                statusId: existing.id, status: existing.status, completedAt: existing.completedAt,
+              });
             }
-            companyObligations.push({
-              obligationId: obl.id, name: obl.name,
-              statusId: existing.id, status: existing.status, completedAt: existing.completedAt,
-            });
           }
         }
 
@@ -590,6 +671,7 @@ module.exports = class ObligationController {
             obligations: companyObligations,
             total: companyObligations.length,
             completed: companyObligations.filter((o) => o.status === "completed").length,
+            disabled: companyObligations.filter((o) => o.status === "disabled" || o.status === "not_applicable").length,
           });
         }
       }
@@ -670,10 +752,13 @@ module.exports = class ObligationController {
         // Pré-computar período por obrigação (anuais podem ter período diferente de mensais)
         const oblPeriods = {};
         const periodSet = new Set();
+        const visibleObligations = [];
         for (const obl of obligations) {
-          const p = periodParam || getCurrentPeriod(obl);
+          if (periodParam && !obligationIsActiveForPeriod(obl, periodParam)) continue;
+          const p = getObligationPeriodForDisplay(obl, periodParam);
           oblPeriods[obl.id] = p;
-          periodSet.add(p);
+          if (Array.isArray(p)) { p.forEach((x) => periodSet.add(x)); } else { periodSet.add(p); }
+          visibleObligations.push(obl);
         }
         const mainPeriod = periodParam || getCurrentPeriod(obligations[0]);
 
@@ -718,9 +803,9 @@ module.exports = class ObligationController {
           userStats[u.id] = { id: u.id, name: u.name, totalCompanies: 0, completedCompanies: 0, pendingCompanies: 0 };
         }
 
-        // Stats por obrigação
+        // Stats por obrigação (apenas obrigações visíveis para o período)
         const obligationStats = {};
-        for (const obl of obligations) {
+        for (const obl of visibleObligations) {
           obligationStats[obl.id] = {
             id: obl.id, name: obl.name, department: obl.department,
             sendWhenZeroed: obl.sendWhenZeroed,
@@ -735,30 +820,33 @@ module.exports = class ObligationController {
           let companyActive = 0;
           let companyPending = 0;
 
-          for (const obl of obligations) {
+          for (const obl of visibleObligations) {
             if (excludedIds.has(obl.id)) continue;
             if (!obligationMatchesCompany(obl, company) && !manualIds.has(obl.id)) continue;
 
-            const oblPeriod = oblPeriods[obl.id];
-            const statusKey = `${company.id}_${obl.id}_${oblPeriod}`;
-            let status = statusMap.get(statusKey);
+            // Quinzenal pode ter 2 períodos; cada um conta separadamente nas stats
+            const periods = Array.isArray(oblPeriods[obl.id]) ? oblPeriods[obl.id] : [oblPeriods[obl.id]];
+            for (const oblPeriod of periods) {
+              const statusKey = `${company.id}_${obl.id}_${oblPeriod}`;
+              let status = statusMap.get(statusKey);
 
-            // Sem registro: inferir status esperado sem tocar o banco
-            if (status === undefined) {
-              status = isObligationDisabledForCompany(obl, company) ? "disabled" : "pending";
-            }
+              // Sem registro: inferir status esperado sem tocar o banco
+              if (status === undefined) {
+                status = isObligationDisabledForCompany(obl, company) ? "disabled" : "pending";
+              }
 
-            const stats = obligationStats[obl.id];
-            stats.total++;
-            if (status === "completed") stats.completed++;
-            else if (status === "disabled") stats.disabled++;
-            else stats.pending++;
+              const stats = obligationStats[obl.id];
+              stats.total++;
+              if (status === "completed") stats.completed++;
+              else if (status === "disabled" || status === "not_applicable") stats.disabled++;
+              else stats.pending++;
 
-            if (status !== "disabled") {
-              companyActive++;
-              if (status === "pending") companyPending++;
-            }
-          }
+              if (status !== "disabled" && status !== "not_applicable") {
+                companyActive++;
+                if (status === "pending") companyPending++;
+              }
+            } // end for oblPeriod
+          } // end for obl
 
           // Atribui ao responsável do departamento
           const userId = company[respField];
@@ -837,8 +925,8 @@ module.exports = class ObligationController {
         });
       }
 
-      // Ordena: pendentes → concluídas → desabilitadas
-      const order = { pending: 0, completed: 1, disabled: 2 };
+      // Ordena: pendentes → concluídas → desabilitadas/não aplicáveis
+      const order = { pending: 0, completed: 1, disabled: 2, not_applicable: 2 };
       rows.sort((a, b) => (order[a.status] ?? 0) - (order[b.status] ?? 0));
 
       return res.json({ obligation: obligation.toJSON(), period, companies: rows });

@@ -1,4 +1,4 @@
-// D:\projetos\contask_v2\contask_api\controllers\BonusController.js
+// /controllers/BonusController.js
 const { Op } = require("sequelize");
 const sequelize = require("../db/conn");
 const logger = require("../logger/logger");
@@ -7,6 +7,79 @@ const Company = require("../models/Company");
 const User = require("../models/User");
 const BonusFactor = require("../models/BonusFactor");
 const BonusResult = require("../models/BonusResult");
+const CompanyTax = require("../models/CompanyTax");
+const CompanyTaxStatus = require("../models/CompanyTaxStatus");
+const AccessoryObligation = require("../models/AccessoryObligation");
+const CompanyObligationStatus = require("../models/CompanyObligationStatus");
+
+function getCurrentMonthPeriod(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+/**
+ * Retorna um Set com os IDs das empresas que estão 100% concluídas para o período
+ * e departamento fornecidos. Apenas empresas onde total > 0 && pending === 0.
+ */
+async function getCompletedCompanyIds(period, department, companyIds, transaction) {
+  if (!companyIds.length) return new Set();
+
+  // Impostos visíveis (filtra trimestrais fora do trimestre)
+  const allTaxes = await CompanyTax.findAll({ where: { department }, attributes: ["id", "periodicity"], raw: true, transaction });
+  const month = parseInt(period.split("-")[1], 10);
+  const taxIds = allTaxes
+    .filter((t) => t.periodicity !== "trimestral" || [3, 6, 9, 12].includes(month))
+    .map((t) => t.id);
+
+  // Obrigações visíveis (anuais só no mês correto)
+  const allObls = await AccessoryObligation.findAll({ where: { department }, attributes: ["id", "periodicity", "deadlineMonth"], raw: true, transaction });
+  const visibleObls = allObls.filter((o) => {
+    if (o.periodicity !== "annual") return true;
+    if (!o.deadlineMonth) return true;
+    return o.deadlineMonth === month;
+  });
+  const oblIds = visibleObls.map((o) => o.id);
+
+  // Períodos de banco por obrigação
+  const oblPeriodSet = new Set();
+  for (const obl of visibleObls) {
+    if (obl.periodicity === "biweekly") { oblPeriodSet.add(`${period}-1`); oblPeriodSet.add(`${period}-2`); }
+    else if (obl.periodicity === "annual") { oblPeriodSet.add(period.substring(0, 4)); }
+    else { oblPeriodSet.add(period); }
+  }
+
+  // Queries em batch
+  const [taxStatuses, oblStatuses] = await Promise.all([
+    taxIds.length
+      ? CompanyTaxStatus.findAll({
+          where: { companyId: companyIds, taxId: taxIds, period, isManuallyExcluded: false, status: { [Op.ne]: "disabled" } },
+          attributes: ["companyId", "status"],
+          raw: true,
+          transaction,
+        })
+      : [],
+    oblIds.length && oblPeriodSet.size
+      ? CompanyObligationStatus.findAll({
+          where: { companyId: companyIds, obligationId: oblIds, period: { [Op.in]: [...oblPeriodSet] }, isManuallyExcluded: false, status: { [Op.ne]: "disabled" } },
+          attributes: ["companyId", "status"],
+          raw: true,
+          transaction,
+        })
+      : [],
+  ]);
+
+  const totals = {};
+  for (const id of companyIds) totals[id] = { total: 0, pending: 0 };
+  for (const s of taxStatuses) { if (totals[s.companyId]) { totals[s.companyId].total++; if (s.status === "pending") totals[s.companyId].pending++; } }
+  for (const s of oblStatuses) { if (totals[s.companyId]) { totals[s.companyId].total++; if (s.status === "pending") totals[s.companyId].pending++; } }
+
+  const completedIds = new Set();
+  for (const [id, { total, pending }] of Object.entries(totals)) {
+    if (total > 0 && pending === 0) completedIds.add(parseInt(id, 10));
+  }
+  return completedIds;
+}
 
 // Chaves dos fatores para consistência
 const FACTOR_KEYS = {
@@ -79,7 +152,11 @@ module.exports = class BonusController {
    */
   static async getBonusResults(req, res) {
     try {
+      const { period } = req.query;
+      // Se period fornecido, filtra por ele; senão retorna registros legados (period = null)
+      const where = period ? { period } : { period: null };
       const results = await BonusResult.findAll({
+        where,
         order: [["userName", "ASC"]],
       });
       res.status(200).json(results);
@@ -95,10 +172,11 @@ module.exports = class BonusController {
   static async runFullBonusCalculation(req, res) {
     const transaction = await sequelize.transaction();
     try {
-      logger.info(`Admin (${req.user.email}) iniciou o recálculo de bônus.`);
+      const period = req.body.period || getCurrentMonthPeriod();
+      logger.info(`Admin (${req.user.email}) iniciou o recálculo de bônus para competência ${period}.`);
 
-      // 1. Limpa os resultados antigos
-      await BonusResult.destroy({ where: {}, transaction });
+      // 1. Limpa os resultados anteriores APENAS para este período
+      await BonusResult.destroy({ where: { period }, transaction });
 
       // 2. Busca os fatores
       const factors = await BonusFactor.findAll({ transaction });
@@ -131,81 +209,51 @@ module.exports = class BonusController {
       const allResults = [];
       const calculationDate = new Date();
 
-      // --- 4. CÁLCULO PARA DEPARTAMENTO PESSOAL (Sem alteração) ---
-      for (const user of dpUsersEligible) {
-        const companies = await Company.findAll({
-          where: { respDpId: user.id, status: "ATIVA", isArchived: false },
+      // --- 4. CÁLCULO PARA DEPARTAMENTO PESSOAL ---
+      if (dpUsersEligible.length > 0) {
+        const allDpCompanies = await Company.findAll({
+          where: { respDpId: { [Op.in]: dpUsersEligible.map((u) => u.id) }, status: "ATIVA", isArchived: false },
           transaction,
         });
-        let totalBonus = 0;
-        const details = [];
+        const dpCompanyIds = allDpCompanies.map((c) => c.id);
+        const completedDpIds = await getCompletedCompanyIds(period, "Pessoal", dpCompanyIds, transaction);
 
-        for (const company of companies) {
-          let companyBonus = 0;
-          const empCount = company.employeesCount || 0;
-          if (empCount <= 1) {
-            companyBonus = FATOR1_DP;
-          } else {
-            companyBonus = FATOR2_DP * empCount;
+        for (const user of dpUsersEligible) {
+          const companies = allDpCompanies.filter((c) => c.respDpId === user.id && completedDpIds.has(c.id));
+          let totalBonus = 0;
+          const details = [];
+
+          for (const company of companies) {
+            let companyBonus = 0;
+            const empCount = company.employeesCount || 0;
+            if (empCount <= 1) { companyBonus = FATOR1_DP; } else { companyBonus = FATOR2_DP * empCount; }
+            totalBonus += companyBonus;
+            details.push({ companyName: company.name, employeesCount: empCount, bonus: companyBonus });
           }
-          totalBonus += companyBonus;
-          details.push({
-            companyName: company.name,
-            employeesCount: empCount,
-            bonus: companyBonus,
-          });
+          allResults.push({ userId: user.id, userName: user.name, department: "Pessoal", totalBonus, details, calculationDate, period });
         }
-        allResults.push({
-          userId: user.id,
-          userName: user.name,
-          department: "Pessoal",
-          totalBonus,
-          details,
-          calculationDate,
-        });
       }
 
       // --- 5. CÁLCULO PARA DEPARTAMENTO FISCAL ---
       if (fiscalUsersEligible.length > 0) {
         const eligibleFiscalUserIds = fiscalUsersEligible.map((u) => u.id);
-
-        // ALTERAÇÃO: O total 'A' agora considera apenas empresas dos usuários elegíveis.
-        const totalActiveCompaniesResult = await Company.count({
-          where: {
-            status: "ATIVA",
-            isArchived: false,
-            respFiscalId: { [Op.in]: eligibleFiscalUserIds },
-          },
+        const allFiscalCompanies = await Company.findAll({
+          where: { respFiscalId: { [Op.in]: eligibleFiscalUserIds }, status: "ATIVA", isArchived: false },
           transaction,
         });
-        const A = totalActiveCompaniesResult || 1;
+        const fiscalCompanyIds = allFiscalCompanies.map((c) => c.id);
+        const completedFiscalIds = await getCompletedCompanyIds(period, "Fiscal", fiscalCompanyIds, transaction);
+        const completedFiscalCompanies = allFiscalCompanies.filter((c) => completedFiscalIds.has(c.id));
 
-        // ALTERAÇÃO: A soma 'B' também considera apenas empresas dos usuários elegíveis.
-        const totalBonusValueResult = await Company.sum("bonusValue", {
-          where: {
-            status: "ATIVA",
-            isArchived: false,
-            respFiscalId: { [Op.in]: eligibleFiscalUserIds },
-          },
-          transaction,
-        });
-        const B = totalBonusValueResult || 1;
-
+        // A e B calculados apenas sobre empresas concluídas
+        const A = completedFiscalCompanies.length || 1;
+        const B = completedFiscalCompanies.reduce((sum, c) => sum + (c.bonusValue || 0), 0) || 1;
         const C = VALOR_BASE_C_FISCAL;
-
         const D = (B > 0 ? C / B : 0) + C * 0.05;
         const E = A > 0 ? C / A : 0;
 
-        // ALTERAÇÃO: Loop itera apenas sobre os usuários elegíveis.
         for (const user of fiscalUsersEligible) {
-          const companies = await Company.findAll({
-            where: {
-              respFiscalId: user.id,
-              status: "ATIVA",
-              isArchived: false,
-            },
-            transaction,
-          });
+          const companies = completedFiscalCompanies.filter((c) => c.respFiscalId === user.id);
           let totalBonus = 0;
           const details = [];
 
@@ -213,56 +261,34 @@ module.exports = class BonusController {
             const companyBonusValue = company.bonusValue || 0;
             const calculatedBonus = companyBonusValue * D + E;
             totalBonus += calculatedBonus;
-            details.push({
-              companyName: company.name,
-              bonusValue: companyBonusValue,
-              bonus: calculatedBonus,
-            });
+            details.push({ companyName: company.name, bonusValue: companyBonusValue, bonus: calculatedBonus });
           }
-          allResults.push({
-            userId: user.id,
-            userName: user.name,
-            department: "Fiscal",
-            totalBonus,
-            details,
-            calculationDate,
-          });
+          allResults.push({ userId: user.id, userName: user.name, department: "Fiscal", totalBonus, details, calculationDate, period });
         }
       }
 
       // --- 6. CÁLCULO PARA DEPARTAMENTO CONTÁBIL ---
-      for (const user of contabilUsersEligible) {
-        const companies = await Company.findAll({
-          where: {
-            respContabilId: user.id,
-            status: "ATIVA",
-            isArchived: false,
-          },
+      if (contabilUsersEligible.length > 0) {
+        const allContabilCompanies = await Company.findAll({
+          where: { respContabilId: { [Op.in]: contabilUsersEligible.map((u) => u.id) }, status: "ATIVA", isArchived: false },
           transaction,
         });
+        const contabilCompanyIds = allContabilCompanies.map((c) => c.id);
+        const completedContabilIds = await getCompletedCompanyIds(period, "Contábil", contabilCompanyIds, transaction);
 
-        let totalBonus = 0;
-        const details = [];
+        for (const user of contabilUsersEligible) {
+          const companies = allContabilCompanies.filter((c) => c.respContabilId === user.id && completedContabilIds.has(c.id));
+          let totalBonus = 0;
+          const details = [];
 
-        for (const company of companies) {
-          const monthsCount = company.accountingMonthsCount || 0;
-          const companyBonus = monthsCount * VALOR_MES_CONTABIL;
-          totalBonus += companyBonus;
-          details.push({
-            companyName: company.name,
-            accountingMonthsCount: monthsCount,
-            bonus: companyBonus,
-          });
+          for (const company of companies) {
+            const monthsCount = company.accountingMonthsCount || 0;
+            const companyBonus = monthsCount * VALOR_MES_CONTABIL;
+            totalBonus += companyBonus;
+            details.push({ companyName: company.name, accountingMonthsCount: monthsCount, bonus: companyBonus });
+          }
+          allResults.push({ userId: user.id, userName: user.name, department: "Contábil", totalBonus, details, calculationDate, period });
         }
-
-        allResults.push({
-          userId: user.id,
-          userName: user.name,
-          department: "Contábil",
-          totalBonus,
-          details,
-          calculationDate,
-        });
       }
 
       // 7. Insere todos os resultados no banco
@@ -271,10 +297,8 @@ module.exports = class BonusController {
       }
 
       await transaction.commit();
-      logger.info("Cálculo de bônus concluído e salvo com sucesso.");
-      res
-        .status(200)
-        .json({ message: "Cálculo de bônus concluído e salvo com sucesso." });
+      logger.info(`Cálculo de bônus (${period}) concluído e salvo com sucesso.`);
+      res.status(200).json({ message: `Cálculo de bônus concluído e salvo com sucesso para ${period}.` });
     } catch (error) {
       await transaction.rollback();
       logger.error(`Erro ao executar o cálculo de bônus: ${error.message}`, {

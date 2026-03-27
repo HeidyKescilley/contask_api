@@ -1104,6 +1104,136 @@ module.exports = class CompanyController {
       });
     }
   }
+
+  /**
+   * GET /company/period-completion?period=YYYY-MM&department=Fiscal&companyIds=1,2,3
+   *
+   * Retorna o estado de conclusão de cada empresa para um período específico,
+   * calculado exclusivamente a partir dos registros de status (CompanyTaxStatus +
+   * CompanyObligationStatus). Nunca escreve na tabela Company.
+   *
+   * Resposta: { [companyId]: { isComplete, total, completed, pending } }
+   */
+  static async getPeriodCompletion(req, res) {
+    try {
+      const { period, department, companyIds: companyIdsParam } = req.query;
+
+      if (!period || !department || !companyIdsParam) {
+        return res.status(400).json({ message: "Parâmetros obrigatórios: period, department, companyIds." });
+      }
+
+      const companyIds = companyIdsParam.split(",").map((id) => parseInt(id, 10)).filter(Boolean);
+      if (companyIds.length === 0) return res.json({});
+
+      const cfg = getDeptConfig(department);
+      if (!cfg) return res.status(400).json({ message: "Departamento inválido." });
+
+      // Busca todos os impostos e obrigações do departamento
+      const [deptTaxes, deptObligations] = await Promise.all([
+        CompanyTax.findAll({ where: { department }, attributes: ["id", "periodicity"], raw: true }),
+        AccessoryObligation.findAll({ where: { department }, attributes: ["id", "periodicity", "deadlineMonth"], raw: true }),
+      ]);
+
+      const taxIds = deptTaxes
+        .filter((t) => {
+          // Impostos trimestrais: só visíveis em meses de fechamento
+          if (t.periodicity !== "trimestral") return true;
+          const month = parseInt(period.split("-")[1], 10);
+          return [3, 6, 9, 12].includes(month);
+        })
+        .map((t) => t.id);
+
+      // Obrigações visíveis: anuais aparecem no mês ANTERIOR ao vencimento
+      const [displayYear, displayMonthNum] = period.split("-").map(Number);
+      const visibleObligations = deptObligations.filter((obl) => {
+        if (obl.periodicity !== "annual") return true;
+        if (!obl.deadlineMonth) return true;
+        const expectedDisplay = obl.deadlineMonth === 1 ? 12 : obl.deadlineMonth - 1;
+        return expectedDisplay === displayMonthNum;
+      });
+
+      // Resolve períodos de banco para cada obrigação
+      const oblPeriodMap = {}; // obligationId -> string[]
+      const oblPeriodSet = new Set();
+      for (const obl of visibleObligations) {
+        let periods;
+        if (obl.periodicity === "biweekly") {
+          periods = [`${period}-1`, `${period}-2`];
+        } else if (obl.periodicity === "annual") {
+          // Se vence em janeiro e exibimos em dezembro → DB pertence ao próximo ano
+          const dbYear = obl.deadlineMonth === 1 && displayMonthNum === 12 ? displayYear + 1 : displayYear;
+          periods = [String(dbYear)];
+        } else {
+          periods = [period];
+        }
+        oblPeriodMap[obl.id] = periods;
+        periods.forEach((p) => oblPeriodSet.add(p));
+      }
+      const oblIds = visibleObligations.map((o) => o.id);
+
+      // Queries em batch para status existentes
+      const [taxStatuses, oblStatuses] = await Promise.all([
+        taxIds.length
+          ? CompanyTaxStatus.findAll({
+              where: {
+                companyId: companyIds,
+                taxId: taxIds,
+                period,
+                isManuallyExcluded: false,
+                status: { [Op.ne]: "disabled" },
+              },
+              attributes: ["companyId", "status"],
+              raw: true,
+            })
+          : [],
+        oblIds.length && oblPeriodSet.size
+          ? CompanyObligationStatus.findAll({
+              where: {
+                companyId: companyIds,
+                obligationId: oblIds,
+                period: { [Op.in]: [...oblPeriodSet] },
+                isManuallyExcluded: false,
+                status: { [Op.notIn]: ["disabled", "not_applicable"] },
+              },
+              attributes: ["companyId", "status"],
+              raw: true,
+            })
+          : [],
+      ]);
+
+      // Agrega por empresa
+      const totals = {}; // companyId -> { total, pending }
+      for (const id of companyIds) totals[id] = { total: 0, pending: 0 };
+
+      for (const s of taxStatuses) {
+        if (!totals[s.companyId]) continue;
+        totals[s.companyId].total++;
+        if (s.status === "pending") totals[s.companyId].pending++;
+      }
+      for (const s of oblStatuses) {
+        if (!totals[s.companyId]) continue;
+        totals[s.companyId].total++;
+        if (s.status === "pending") totals[s.companyId].pending++;
+      }
+
+      const result = {};
+      for (const id of companyIds) {
+        const { total, pending } = totals[id];
+        const completed = total - pending;
+        result[id] = {
+          isComplete: total > 0 && pending === 0,
+          total,
+          completed,
+          pending,
+        };
+      }
+
+      return res.json(result);
+    } catch (error) {
+      logger.error(`CompanyController.getPeriodCompletion: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
 };
 
 // Exporta utilitários de cache para uso em outros controllers (AdminController, schedulers)

@@ -21,8 +21,18 @@ const logger = require("../logger/logger");
  * @param {string} taxPeriod - Período YYYY-MM do item alterado
  * @param {string} department - "Fiscal" | "Pessoal" | "Contábil"
  */
+// Retorna o período do mês atual no formato YYYY-MM
+function getCurrentMonthPeriod() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 async function checkAndUpdateCompletion(companyId, taxPeriod, department) {
   try {
+    // Só atualiza as flags da empresa para o mês corrente.
+    // Alterações em períodos futuros (competências) não devem sobrescrever o estado atual.
+    if (taxPeriod !== getCurrentMonthPeriod()) return;
+
     const cfg = getDeptConfig(department);
     if (!cfg?.completedAt || !cfg?.obligationsEnabled) return;
 

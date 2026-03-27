@@ -30,6 +30,11 @@ const BonusResult = db.define("BonusResult", {
     allowNull: false,
     defaultValue: DataTypes.NOW,
   },
+  period: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: "Competência YYYY-MM à qual este cálculo se refere. null = legado (pré-competência).",
+  },
 });
 
 module.exports = BonusResult;

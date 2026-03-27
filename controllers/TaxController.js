@@ -16,6 +16,14 @@ function getCurrentMonthPeriod(date = new Date()) {
   return `${y}-${m}`;
 }
 
+// ── Filtro de periodicidade por competência ────────────────────────────────────
+// Retorna false para impostos trimestrais em meses que não são fechamento de trimestre
+function taxIsActiveForPeriod(tax, period) {
+  if (tax.periodicity !== "trimestral") return true;
+  const month = parseInt(period.split("-")[1], 10);
+  return [3, 6, 9, 12].includes(month);
+}
+
 // ── Verificar se imposto se aplica à empresa ───────────────────────────────────
 function taxMatchesCompany(tax, company) {
   const { applicableRegimes, applicableClassificacoes, applicableUFs } = tax;
@@ -69,7 +77,7 @@ module.exports = class TaxController {
   // POST /tax/create  (admin only)
   static async create(req, res) {
     try {
-      const { name, department, applicableRegimes, applicableClassificacoes, applicableUFs } = req.body;
+      const { name, department, applicableRegimes, applicableClassificacoes, applicableUFs, periodicity } = req.body;
       if (!name) return res.status(400).json({ message: "Nome é obrigatório." });
       if (!department) return res.status(400).json({ message: "Departamento é obrigatório." });
       const tax = await CompanyTax.create({
@@ -78,6 +86,7 @@ module.exports = class TaxController {
         applicableRegimes: applicableRegimes || null,
         applicableClassificacoes: applicableClassificacoes || null,
         applicableUFs: applicableUFs || null,
+        periodicity: periodicity || "mensal",
       });
       logger.info(`Imposto "${name}" (${department}) criado por ${req.user?.name}`);
       cacheManager.invalidateByPrefix("tax_dashboard");
@@ -93,7 +102,7 @@ module.exports = class TaxController {
     try {
       const tax = await CompanyTax.findByPk(req.params.id);
       if (!tax) return res.status(404).json({ message: "Imposto não encontrado." });
-      const allowed = ["name", "department", "applicableRegimes", "applicableClassificacoes", "applicableUFs"];
+      const allowed = ["name", "department", "applicableRegimes", "applicableClassificacoes", "applicableUFs", "periodicity"];
       const updates = {};
       allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
       await tax.update(updates);
@@ -155,6 +164,7 @@ module.exports = class TaxController {
           continue;
         }
         if (!isApplicable) continue;
+        if (!taxIsActiveForPeriod(tax, period)) continue; // trimestral fora do trimestre: ocultar
 
         const statusRecord = await getOrCreateTaxStatus(company, tax, period);
 
@@ -313,6 +323,7 @@ module.exports = class TaxController {
       const toCreate = [];
       const toDisable = [];
       const toEnable = [];
+      const isCurrentPeriod = !period || period <= getCurrentMonthPeriod();
 
       for (const company of companies) {
         const excludedIds = excludedMap.get(company.id) || new Set();
@@ -322,6 +333,7 @@ module.exports = class TaxController {
         for (const tax of taxes) {
           if (excludedIds.has(tax.id)) continue;
           if (!taxMatchesCompany(tax, company) && !manualIds.has(tax.id)) continue;
+          if (!taxIsActiveForPeriod(tax, period)) continue; // trimestral fora do trimestre: ocultar
 
           const zeroed = isCompanyZeroedForDept(company, tax.department);
           const expectedStatus = zeroed ? "disabled" : "pending";
@@ -329,20 +341,28 @@ module.exports = class TaxController {
           const existing = statusMap.get(key);
 
           if (!existing) {
-            toCreate.push({ companyId: company.id, taxId: tax.id, period, status: expectedStatus });
-            companyTaxes.push({
-              taxId: tax.id, name: tax.name, department: tax.department,
-              statusId: null, status: expectedStatus, completedAt: null,
-              _key: key,
-            });
+            // Só cria registros no banco para o período atual; para outros períodos, infere o status
+            if (isCurrentPeriod) {
+              toCreate.push({ companyId: company.id, taxId: tax.id, period, status: expectedStatus });
+              companyTaxes.push({
+                taxId: tax.id, name: tax.name, department: tax.department,
+                statusId: null, status: expectedStatus, completedAt: null,
+                _key: key,
+              });
+            } else {
+              companyTaxes.push({
+                taxId: tax.id, name: tax.name, department: tax.department,
+                statusId: null, status: expectedStatus, completedAt: null,
+              });
+            }
           } else {
             if (zeroed && existing.status === "pending") {
-              toDisable.push(existing.id);
+              if (isCurrentPeriod) toDisable.push(existing.id);
               existing.status = "disabled";
             } else if (!zeroed && existing.status === "disabled") {
-              // Empresa deixou de ser zerada: reabilitar imposto automaticamente
-              toEnable.push(existing.id);
-              existing.status = "pending";
+              // Empresa deixou de ser zerada: reabilitar imposto automaticamente (apenas período atual)
+              if (isCurrentPeriod) toEnable.push(existing.id);
+              if (isCurrentPeriod) existing.status = "pending";
             }
             companyTaxes.push({
               taxId: tax.id, name: tax.name, department: tax.department,
@@ -485,6 +505,7 @@ module.exports = class TaxController {
           for (const tax of taxes) {
             if (excludedIds.has(tax.id)) continue;
             if (!taxMatchesCompany(tax, company) && !manualIds.has(tax.id)) continue;
+            if (!taxIsActiveForPeriod(tax, period)) continue; // trimestral fora do trimestre: ocultar
 
             let status = statusMap.get(`${company.id}_${tax.id}`);
             // Sem registro: inferir status sem tocar o banco
