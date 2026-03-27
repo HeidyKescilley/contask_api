@@ -184,3 +184,10 @@ Company.hasMany(CompanyOrientation, { foreignKey: "companyId", as: "orientations
 CompanyOrientation.belongsTo(Company, { foreignKey: "companyId", as: "company" });
 User.hasMany(CompanyOrientation, { foreignKey: "createdById", as: "createdOrientations" });
 CompanyOrientation.belongsTo(User, { foreignKey: "createdById", as: "createdBy" });
+
+// Associações para Notas por Período
+const CompanyPeriodNote = require("./CompanyPeriodNote");
+Company.hasMany(CompanyPeriodNote, { foreignKey: "companyId", as: "periodNotes", onDelete: "CASCADE" });
+CompanyPeriodNote.belongsTo(Company, { foreignKey: "companyId", as: "company" });
+User.hasMany(CompanyPeriodNote, { foreignKey: "updatedById", as: "periodNotes" });
+CompanyPeriodNote.belongsTo(User, { foreignKey: "updatedById", as: "updatedBy" });

@@ -9,11 +9,13 @@ const { getDeptConfig } = require("../config/departmentConfig");
 const cacheManager = require("../utils/CacheManager");
 const { checkAndUpdateCompletion } = require("../utils/completionChecker");
 
-// ── Período atual (sempre mensal) ──────────────────────────────────────────────
-function getCurrentMonthPeriod(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+// ── Período de referência (mês anterior) ──────────────────────────────────────
+// Na contabilidade, sempre trabalhamos com a competência anterior (mês passado)
+function getCurrentMonthPeriod() {
+  const d = new Date();
+  d.setDate(1); // evita erro em dias 29-31 ao retroceder mês
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 // ── Filtro de periodicidade por competência ────────────────────────────────────

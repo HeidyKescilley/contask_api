@@ -21,10 +21,13 @@ const logger = require("../logger/logger");
  * @param {string} taxPeriod - Período YYYY-MM do item alterado
  * @param {string} department - "Fiscal" | "Pessoal" | "Contábil"
  */
-// Retorna o período do mês atual no formato YYYY-MM
+// Retorna o período do mês anterior no formato YYYY-MM
+// Na contabilidade, sempre trabalhamos com a competência anterior (mês passado)
 function getCurrentMonthPeriod() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const d = new Date();
+  d.setDate(1); // evita erro em dias 29-31 ao retroceder mês
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 async function checkAndUpdateCompletion(companyId, taxPeriod, department) {

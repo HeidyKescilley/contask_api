@@ -61,6 +61,11 @@ router.patch(
   CompanyController.updateAgentData
 );
 
+// Rotas para Notas por Período
+router.get("/period-notes", verifyToken, CompanyController.getPeriodNotesBulk);
+router.get("/period-note/:id", verifyToken, CompanyController.getPeriodNote);
+router.patch("/period-note/:id", verifyToken, CompanyController.savePeriodNote);
+
 // Rotas para ContactMode
 router.post(
   "/contact-modes",

@@ -12,10 +12,13 @@ const CompanyTaxStatus = require("../models/CompanyTaxStatus");
 const AccessoryObligation = require("../models/AccessoryObligation");
 const CompanyObligationStatus = require("../models/CompanyObligationStatus");
 
-function getCurrentMonthPeriod(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+// Retorna o período do mês anterior no formato YYYY-MM
+// Na contabilidade, sempre trabalhamos com a competência anterior (mês passado)
+function getCurrentMonthPeriod() {
+  const d = new Date();
+  d.setDate(1); // evita erro em dias 29-31 ao retroceder mês
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 /**

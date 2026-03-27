@@ -30,11 +30,15 @@ const CompanyObligationStatus = require("../models/CompanyObligationStatus");
 const { checkAndUpdateCompletion } = require("../utils/completionChecker");
 const CompanyTax = require("../models/CompanyTax");
 const AccessoryObligation = require("../models/AccessoryObligation");
+const CompanyPeriodNote = require("../models/CompanyPeriodNote");
 
-function getCurrentMonthPeriod(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+// Retorna o período do mês anterior no formato YYYY-MM
+// Na contabilidade, sempre trabalhamos com a competência anterior (mês passado)
+function getCurrentMonthPeriod() {
+  const d = new Date();
+  d.setDate(1); // evita erro em dias 29-31 ao retroceder mês
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 // Lista completa de atributos da Company para uso em findAll/findOne
@@ -570,12 +574,12 @@ module.exports = class CompanyController {
       const whereClause = {
         [config.responsibleField]: user.id,
         isArchived: false,
-        status: "ATIVA",
+        // status não filtrado aqui — filtragem temporal por período feita no frontend
       };
 
       const myCompaniesKey = registerMyCompaniesCache(user);
 
-      // Registrar com filtro de status ATIVA para a view de agente
+      // Registrar empresas do agente (ATIVA + SUSPENSA/BAIXADA/DISTRATO até o mês do status)
       cacheManager.register(myCompaniesKey, async () => {
         return Company.findAll({
           where: whereClause,
@@ -1231,6 +1235,53 @@ module.exports = class CompanyController {
       return res.json(result);
     } catch (error) {
       logger.error(`CompanyController.getPeriodCompletion: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  // ==================== NOTAS POR PERÍODO ====================
+
+  static async getPeriodNote(req, res) {
+    const { id } = req.params;
+    const { period } = req.query;
+    if (!period) return res.status(400).json({ message: "Parâmetro 'period' obrigatório." });
+    try {
+      const record = await CompanyPeriodNote.findOne({ where: { companyId: id, period } });
+      return res.status(200).json({ note: record?.note ?? "" });
+    } catch (error) {
+      logger.error(`CompanyController.getPeriodNote: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async savePeriodNote(req, res) {
+    const { id } = req.params;
+    const { period, note } = req.body;
+    if (!period) return res.status(400).json({ message: "Campo 'period' obrigatório." });
+    try {
+      await CompanyPeriodNote.upsert({ companyId: id, period, note: note ?? null, updatedById: req.user.id });
+      return res.status(200).json({ note: note ?? "" });
+    } catch (error) {
+      logger.error(`CompanyController.savePeriodNote: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async getPeriodNotesBulk(req, res) {
+    const { period } = req.query;
+    const companyIds = req.query.companyIds ? req.query.companyIds.split(",").map(Number) : [];
+    if (!period || companyIds.length === 0)
+      return res.status(400).json({ message: "Parâmetros 'period' e 'companyIds' obrigatórios." });
+    try {
+      const records = await CompanyPeriodNote.findAll({
+        where: { period, companyId: { [Op.in]: companyIds } },
+        attributes: ["companyId", "note"],
+      });
+      const result = {};
+      records.forEach((r) => { result[r.companyId] = r.note ?? ""; });
+      return res.status(200).json(result);
+    } catch (error) {
+      logger.error(`CompanyController.getPeriodNotesBulk: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }
