@@ -225,6 +225,11 @@ module.exports = class TaxController {
       }
 
       // action === "add"
+      // Limpar exclusões manuais existentes para este imposto nesta empresa
+      await CompanyTaxStatus.update(
+        { isManuallyExcluded: false },
+        { where: { companyId, taxId, isManuallyExcluded: true } }
+      );
       const zeroed = isCompanyZeroedForDept(company, tax.department);
       const [rec, created] = await CompanyTaxStatus.findOrCreate({
         where: { companyId, taxId, period: activePeriod },

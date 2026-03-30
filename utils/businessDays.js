@@ -98,22 +98,19 @@ async function getDeadlineDate(obligation, period) {
   let referenceDate;
 
   if (periodicity === "annual") {
-    // Usa deadlineMonth se definido, senão janeiro
-    const month = deadlineMonth ? String(deadlineMonth).padStart(2, "0") : "01";
-    referenceDate = new Date(`${period}-${month}-01`);
+    // Usa deadlineMonth se definido, senão janeiro (0-indexed para o construtor local)
+    const annualMonth = deadlineMonth ? deadlineMonth - 1 : 0;
+    referenceDate = new Date(Number(period), annualMonth, 1);
   } else if (periodicity === "biweekly") {
     // Período "YYYY-MM-1" ou "YYYY-MM-2"
     const parts = period.split("-");
     const half = parts[parts.length - 1];
-    const monthPart = parts.slice(0, 2).join("-");
-    if (half === "1") {
-      referenceDate = new Date(`${monthPart}-01`);
-    } else {
-      referenceDate = new Date(`${monthPart}-16`);
-    }
+    const [py, pm] = parts.slice(0, 2).map(Number);
+    referenceDate = half === "1" ? new Date(py, pm - 1, 1) : new Date(py, pm - 1, 16);
   } else {
     // Monthly: "YYYY-MM"
-    referenceDate = new Date(`${period}-01`);
+    const [py, pm] = period.split("-").map(Number);
+    referenceDate = new Date(py, pm - 1, 1);
   }
 
   if (deadlineType === "last_business_day") {
