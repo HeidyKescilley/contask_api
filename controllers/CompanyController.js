@@ -12,6 +12,7 @@ const {
   newCompanyTemplate,
 } = require("../emails/templates");
 const ContactMode = require("../models/ContactMode");
+const Grupo = require("../models/Grupo");
 const Automation = require("../models/Automation");
 const getToken = require("../helpers/get-token");
 const formatDate = require("../helpers/format-date");
@@ -69,6 +70,7 @@ const COMPANY_ATTRIBUTES = [
   "bonusValue",
   "employeesCount",
   "isHeadquarters",
+  "grupoId",
   "accountingMonthsCount",
   "isZeroedFiscal",
   "sentToClientFiscal",
@@ -88,6 +90,7 @@ const STANDARD_INCLUDES = [
   { model: User, as: "respDp", attributes: ["id", "name"] },
   { model: User, as: "respContabil", attributes: ["id", "name"] },
   { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
+  { model: Grupo, as: "grupo", attributes: ["id", "name"] },
 ];
 
 const USER_ONLY_INCLUDES = [

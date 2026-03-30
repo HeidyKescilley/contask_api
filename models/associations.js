@@ -8,6 +8,7 @@ const StatusHistory = require("./StatusHistory");
 const DpHistory = require("./DpHistory");
 const FiscalHistory = require("./FiscalHistory");
 const ContactMode = require("./ContactMode");
+const Grupo = require("./Grupo");
 const Automation = require("./Automation");
 const BonusResult = require("./BonusResult");
 const AccessoryObligation = require("./AccessoryObligation");
@@ -77,6 +78,10 @@ Company.belongsTo(ContactMode, {
   foreignKey: "contactModeId",
   as: "contactMode",
 });
+
+// Associação entre Company e Grupo
+Grupo.hasMany(Company, { foreignKey: "grupoId", as: "companies" });
+Company.belongsTo(Grupo, { foreignKey: "grupoId", as: "grupo" });
 
 // Associação Many-to-Many entre Company e Automation
 Company.belongsToMany(Automation, {

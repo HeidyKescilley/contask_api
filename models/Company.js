@@ -86,6 +86,14 @@ const Company = db.define(
         key: "id",
       },
     },
+    grupoId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: "Grupos",
+        key: "id",
+      },
+    },
     important_info: {
       type: DataTypes.TEXT,
       allowNull: true,

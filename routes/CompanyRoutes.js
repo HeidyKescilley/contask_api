@@ -3,6 +3,7 @@ const router = require("express").Router();
 
 const CompanyController = require("../controllers/CompanyController");
 const ContactModeController = require("../controllers/ContactModeController");
+const GrupoController = require("../controllers/GrupoController");
 
 // Middleware
 const verifyToken = require("../helpers/verify-token");
@@ -79,6 +80,10 @@ router.get(
   activityLogger,
   ContactModeController.getAllContactModes
 );
+
+// Rotas para Grupo
+router.get("/grupos", verifyToken, activityLogger, GrupoController.getAllGrupos);
+router.post("/grupos", verifyToken, activityLogger, GrupoController.createGrupo);
 
 // Conclusão de empresas para um período específico (somente leitura, sem criar registros)
 router.get(
