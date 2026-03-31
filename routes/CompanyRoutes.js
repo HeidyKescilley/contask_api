@@ -85,6 +85,9 @@ router.get(
 router.get("/grupos", verifyToken, activityLogger, GrupoController.getAllGrupos);
 router.post("/grupos", verifyToken, activityLogger, GrupoController.createGrupo);
 
+// Troca de responsáveis em lote
+router.post("/bulk-reassign", verifyToken, activityLogger, CompanyController.bulkReassign);
+
 // Conclusão de empresas para um período específico (somente leitura, sem criar registros)
 router.get(
   "/period-completion",

@@ -1288,6 +1288,31 @@ module.exports = class CompanyController {
       return res.status(500).json({ message: error.message });
     }
   }
+
+  // ==================== TROCA DE RESPONSÁVEIS EM LOTE ====================
+
+  static async bulkReassign(req, res) {
+    try {
+      const { fromUserId, toUserId, department, companyIds } = req.body;
+      if (!fromUserId || !toUserId || !department)
+        return res.status(400).json({ message: "fromUserId, toUserId e department são obrigatórios." });
+
+      const fieldMap = { Fiscal: "respFiscalId", Pessoal: "respDpId", "Contábil": "respContabilId" };
+      const field = fieldMap[department];
+      if (!field)
+        return res.status(400).json({ message: "Departamento inválido. Use Fiscal, Pessoal ou Contábil." });
+
+      const where = { [field]: fromUserId };
+      if (companyIds?.length) where.id = { [Op.in]: companyIds };
+
+      const [updated] = await Company.update({ [field]: toUserId }, { where });
+      cacheManager.invalidateAll();
+      return res.json({ message: `${updated} empresa(s) reatribuída(s) com sucesso.`, updated });
+    } catch (err) {
+      logger.error(`CompanyController.bulkReassign: ${err.message}`);
+      return res.status(500).json({ message: "Erro ao realizar a troca em lote." });
+    }
+  }
 };
 
 // Exporta utilitários de cache para uso em outros controllers (AdminController, schedulers)
