@@ -1,6 +1,6 @@
 # API de Dados — Documentação Interna
 
-API privada para acesso aos dados do banco, destinada exclusivamente ao desenvolvedor (user ID 1) para uso em automações e scripts.
+API privada para acesso aos dados do banco, destinada exclusivamente ao desenvolvedor (user ID 1).
 
 ---
 
@@ -12,187 +12,239 @@ Toda requisição aos endpoints de dados deve incluir o header:
 X-API-Key: <sua_chave>
 ```
 
-As chaves são geradas pelo frontend em **Admin → API Keys** (visível apenas para o user 1) ou via curl como descrito abaixo.
+Chaves são gerenciadas pelo frontend em **Admin → API Keys** (visível apenas para user 1).
 
 ---
 
 ## Gerenciamento de Chaves
 
-Estes endpoints usam autenticação JWT normal (`Authorization: Bearer <token>`).
+Usam autenticação JWT normal (`Authorization: Bearer <token>`).
 
-### Gerar nova chave
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `POST` | `/api-keys` | Gera nova chave — body: `{ "name": "..." }` |
+| `GET` | `/api-keys` | Lista chaves |
+| `DELETE` | `/api-keys/:id` | Revoga chave |
 
-```
-POST /api-keys
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{ "name": "Nome da chave" }
-```
-
-Resposta (`201`):
-```json
-{
-  "id": 1,
-  "name": "Script DAS",
-  "key": "a1b2c3d4...64chars",
-  "createdAt": "2026-04-16T10:00:00.000Z"
-}
-```
-
-> A key completa só é retornada neste momento. Guarde-a com segurança.
-
-### Listar chaves
-
-```
-GET /api-keys
-Authorization: Bearer <token>
-```
-
-Resposta (`200`): array de `{ id, name, active, lastUsedAt, createdAt }`
-
-### Revogar chave
-
-```
-DELETE /api-keys/:id
-Authorization: Bearer <token>
-```
+> A key completa só é retornada no `POST`. Guarde-a — não aparece novamente.
 
 ---
 
-## Endpoints de Dados
+## Convenções de Filtros
 
-Base URL: `http://localhost:5000`
+Todos os endpoints `GET /api/data/*` aceitam filtros via query string:
 
-Todos os endpoints são somente-leitura (`GET`).
+| Tipo | Parâmetro | Comportamento |
+|------|-----------|---------------|
+| **Texto** | `?name=maria` | LIKE parcial, case-insensitive (`%maria%`) |
+| **Exato** | `?status=ATIVA` | Igualdade exata |
+| **Booleano** | `?isArchived=false` | Aceita `true/false` ou `1/0` |
+| **Nulo** | `?respFiscalId=null` | Filtra registros onde o campo é NULL |
+| **Faixa numérica** | `?employeesCount_min=10&employeesCount_max=50` | Entre 10 e 50 |
+| **Faixa de data** | `?createdAt_from=2025-01-01&createdAt_to=2025-12-31` | Formato `YYYY-MM-DD` |
+| **Nome do resp.** | `?respFiscalName=heidy` | LIKE no nome do usuário relacionado |
+
+### Paginação e ordenação (todos os endpoints)
+
+| Parâmetro | Padrão | Descrição |
+|-----------|--------|-----------|
+| `limit` | `500` | Máximo de registros (teto: 1000) |
+| `offset` | `0` | Pular N registros |
+| `orderBy` | `name` | Campo para ordenar |
+| `order` | `ASC` | `ASC` ou `DESC` |
+
+A resposta sempre inclui `{ total, limit, offset, data: [...] }`.
 
 ---
 
-### `GET /api/data/companies`
+## `GET /api/data/companies`
 
-Lista todas as empresas.
+### Filtros disponíveis
 
-**Filtros (query string):**
+#### Exatos / enum
+| Parâmetro | Valores de exemplo |
+|-----------|--------------------|
+| `id` | `42` |
+| `num` | `1307` |
+| `rule` | `Simples` · `Presumido` · `Real` · `MEI` |
+| `classi` | `ICMS` · `ISS` · `ICMS/ISS` |
+| `status` | `ATIVA` · `DISTRATO` · `PARALISADA` · `SUSPENSA` |
+| `uf` | `DF` · `SP` · `MG` … |
+| `branchNumber` | `1` |
+| `respFiscalId` | `1` (ID do usuário) |
+| `respDpId` | `8` |
+| `respContabilId` | `13` |
+| `grupoId` | `3` |
+| `contactModeId` | `1` |
 
-| Parâmetro | Exemplo | Descrição |
-|-----------|---------|-----------|
-| `regime` | `Simples` | Regime tributário (`Simples`, `Presumido`, `Real`, `MEI`) |
-| `status` | `Em dia` | Status da empresa |
-| `grupoId` | `3` | ID do grupo |
-| `respFiscalId` | `2` | ID do responsável fiscal |
-| `respDpId` | `5` | ID do responsável DP |
-| `respContabilId` | `4` | ID do responsável contábil |
+#### Busca parcial (texto)
+`name`, `cnpj`, `ie`, `email`, `phone`, `contact`, `obs`, `important_info`
 
-**Exemplo:**
+#### Por nome do responsável (join)
+`respFiscalName`, `respDpName`, `respContabilName`
+
+#### Booleanos
+`isArchived`, `isHeadquarters`, `openedByUs`,
+`isZeroedFiscal`, `sentToClientFiscal`,
+`isZeroedDp`, `sentToClientDp`, `declarationsCompletedDp`, `hasNoDpObligations`,
+`isZeroedContabil`
+
+#### Faixas numéricas
+`bonusValue_min` / `bonusValue_max`,
+`employeesCount_min` / `employeesCount_max`,
+`accountingMonthsCount_min` / `accountingMonthsCount_max`
+
+#### Faixas de data
+`createdAt_from` / `createdAt_to`,
+`statusUpdatedAt_from` / `statusUpdatedAt_to`,
+`fiscalCompletedAt_from` / `fiscalCompletedAt_to`,
+`dpCompletedAt_from` / `dpCompletedAt_to`,
+`contabilCompletedAt_from` / `contabilCompletedAt_to`
+
+### Exemplos
+
 ```bash
-curl -H "X-API-Key: <key>" "http://localhost:5000/api/data/companies?regime=Simples&status=Em+dia"
+# Todas as empresas ativas do Simples com responsável fiscal = Heidy
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/companies?rule=Simples&status=ATIVA&respFiscalName=Heidy"
+
+# Empresas com +30 funcionários, não arquivadas, ordenadas por nome
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/companies?employeesCount_min=30&isArchived=false&orderBy=name"
+
+# Empresas sem responsável fiscal (campo null)
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/companies?respFiscalId=null&isArchived=false"
+
+# Buscar por CNPJ parcial
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/companies?cnpj=22854614"
+
+# Criadas em 2025, página 2
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/companies?createdAt_from=2025-01-01&createdAt_to=2025-12-31&limit=50&offset=50"
 ```
 
 ---
 
-### `GET /api/data/companies/:id`
+## `GET /api/data/companies/:id`
 
-Retorna uma empresa específica com impostos, obrigações e automações vinculadas.
+Retorna empresa completa com impostos, obrigações, automações, grupo e modo de contato.
 
-**Exemplo:**
 ```bash
-curl -H "X-API-Key: <key>" http://localhost:5000/api/data/companies/42
+curl -H "X-API-Key: <key>" http://localhost:5000/api/data/companies/3
 ```
 
 ---
 
-### `GET /api/data/users`
+## `GET /api/data/users`
 
-Lista usuários ativos (exclui `not-validated`).
+### Filtros disponíveis
 
-**Exemplo:**
+| Parâmetro | Tipo | Exemplo |
+|-----------|------|---------|
+| `id` | exato | `1` |
+| `name` | parcial | `heidy` |
+| `email` | parcial | `contelb` |
+| `department` | exato | `Fiscal` · `Pessoal` · `Contábil` · `Financeiro` · `Processual` · `Outros` |
+| `role` | exato | `admin` · `user` · `not-validated` |
+| `ramal` | parcial | `9731` |
+| `hasBonus` | booleano | `true` |
+| `birthday_from` / `birthday_to` | data | `1990-01-01` |
+| `createdAt_from` / `createdAt_to` | data | `2025-01-01` |
+
+Senhas **nunca** são retornadas.
+
 ```bash
-curl -H "X-API-Key: <key>" http://localhost:5000/api/data/users
+# Todos do Fiscal com bonus
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/users?department=Fiscal&hasBonus=true"
+
+# Busca pelo nome
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/users?name=beatriz"
 ```
 
 ---
 
-### `GET /api/data/automations`
+## `GET /api/data/automations`
 
-Lista todas as automações com as empresas vinculadas a cada uma.
+Retorna automações com lista de empresas vinculadas.
 
-**Exemplo:**
 ```bash
 curl -H "X-API-Key: <key>" http://localhost:5000/api/data/automations
 ```
 
 ---
 
-### `GET /api/data/taxes`
-
-Lista statuses de impostos.
-
-**Filtros:**
+## `GET /api/data/taxes`
 
 | Parâmetro | Exemplo | Descrição |
 |-----------|---------|-----------|
 | `month` | `4` | Mês (1–12) |
 | `year` | `2026` | Ano |
-| `type` | `DAS` | Tipo do imposto (`DAS`, `ICMS`, `ISS`, `PIS/COFINS`, `IRPJ/CSLL`, `IPI`, `IRRF`) |
+| `type` | `DAS` | `DAS` · `ICMS` · `ISS` · `PIS/COFINS` · `IRPJ/CSLL` · `IPI` · `IRRF` |
 
-**Exemplo:**
 ```bash
-curl -H "X-API-Key: <key>" "http://localhost:5000/api/data/taxes?month=4&year=2026&type=DAS"
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/taxes?month=4&year=2026&type=DAS"
 ```
 
 ---
 
-### `GET /api/data/obligations`
+## `GET /api/data/obligations`
 
-Lista statuses de obrigações acessórias.
+| Parâmetro | Exemplo |
+|-----------|---------|
+| `month` | `4` |
+| `year` | `2026` |
 
-**Filtros:**
-
-| Parâmetro | Exemplo | Descrição |
-|-----------|---------|-----------|
-| `month` | `4` | Mês (1–12) |
-| `year` | `2026` | Ano |
-
-**Exemplo:**
 ```bash
-curl -H "X-API-Key: <key>" "http://localhost:5000/api/data/obligations?month=4&year=2026"
+curl -H "X-API-Key: <key>" \
+  "http://localhost:5000/api/data/obligations?month=4&year=2026"
 ```
 
 ---
 
-## Exemplo de Script Python
+## Exemplo Python completo
 
 ```python
 import requests
 
-API_KEY = "sua_chave_aqui"
-BASE_URL = "http://localhost:5000"
-HEADERS = {"X-API-Key": API_KEY}
+KEY = "sua_chave_aqui"
+BASE = "http://localhost:5000"
+H = {"X-API-Key": KEY}
 
-# Buscar empresas do Simples com DAS em atraso
-companies = requests.get(
-    f"{BASE_URL}/api/data/companies",
-    headers=HEADERS,
-    params={"regime": "Simples"}
-).json()
+# Empresas do Simples ativas com resp. fiscal = Heidy, com bônus
+companies = requests.get(f"{BASE}/api/data/companies", headers=H, params={
+    "rule": "Simples",
+    "status": "ATIVA",
+    "respFiscalName": "Heidy",
+    "isArchived": "false",
+    "limit": 1000,
+}).json()
 
-das = requests.get(
-    f"{BASE_URL}/api/data/taxes",
-    headers=HEADERS,
-    params={"month": 4, "year": 2026, "type": "DAS"}
-).json()
+print(f"{companies['total']} empresas encontradas")
+for c in companies["data"]:
+    print(c["name"], c["cnpj"])
 
-print(f"{len(companies)} empresas no Simples")
-print(f"{len(das)} registros de DAS em abril/2026")
+# Usuários do Fiscal
+users = requests.get(f"{BASE}/api/data/users", headers=H, params={
+    "department": "Fiscal",
+    "hasBonus": "true",
+}).json()
+
+for u in users["data"]:
+    print(u["name"], u["email"])
 ```
 
 ---
 
-## Erros
+## Códigos de erro
 
 | Código | Descrição |
 |--------|-----------|
-| `401` | API Key não fornecida ou inválida/revogada |
-| `403` | Operação restrita ao desenvolvedor (user ID 1) |
+| `401` | API Key ausente, inválida ou revogada |
+| `403` | Operação restrita ao user ID 1 |
 | `404` | Recurso não encontrado |
-| `500` | Erro interno do servidor |
+| `500` | Erro interno |
