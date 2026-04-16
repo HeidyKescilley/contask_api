@@ -28,6 +28,7 @@ const UserActivity = require("./models/UserActivity");
 const Announcement = require("./models/Announcement");
 const AnnouncementSeen = require("./models/AnnouncementSeen");
 const CompanyOrientation = require("./models/CompanyOrientation");
+const ApiKey = require("./models/ApiKey");
 
 // Importando associações
 require("./models/associations");
@@ -80,6 +81,8 @@ const ActivitySuspensionRoutes = require("./routes/ActivitySuspensionRoutes");
 const BirthdayRoutes = require("./routes/BirthdayRoutes");
 const AnnouncementRoutes = require("./routes/AnnouncementRoutes");
 const OrientationRoutes = require("./routes/OrientationRoutes");
+const ApiKeyRoutes = require("./routes/ApiKeyRoutes");
+const DataApiRoutes = require("./routes/DataApiRoutes");
 
 app.use("/", UserRoutes);
 app.use("/company", CompanyRoutes);
@@ -93,6 +96,8 @@ app.use("/activity-suspension", ActivitySuspensionRoutes);
 app.use("/", BirthdayRoutes);
 app.use("/", AnnouncementRoutes);
 app.use("/orientation", OrientationRoutes);
+app.use("/api-keys", ApiKeyRoutes);
+app.use("/api/data", DataApiRoutes);
 
 const errorHandler = require("./middlewares/errorHandler");
 app.use(errorHandler);

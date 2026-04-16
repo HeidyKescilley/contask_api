@@ -12,4 +12,11 @@ function formatDate(dateInput) {
   return `${day}/${month}/${year}`;
 }
 
-module.exports = formatDate;
+function formatMonth(monthInput) {
+  // Expects "YYYY-MM", returns "MM/YYYY"
+  if (!monthInput || !/^\d{4}-\d{2}$/.test(monthInput)) return "";
+  const [year, month] = monthInput.split("-");
+  return `${month}/${year}`;
+}
+
+module.exports = { formatDate, formatMonth };

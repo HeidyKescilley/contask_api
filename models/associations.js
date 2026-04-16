@@ -196,3 +196,8 @@ Company.hasMany(CompanyPeriodNote, { foreignKey: "companyId", as: "periodNotes",
 CompanyPeriodNote.belongsTo(Company, { foreignKey: "companyId", as: "company" });
 User.hasMany(CompanyPeriodNote, { foreignKey: "updatedById", as: "periodNotes" });
 CompanyPeriodNote.belongsTo(User, { foreignKey: "updatedById", as: "updatedBy" });
+
+// Associações para ApiKey
+const ApiKey = require("./ApiKey");
+User.hasMany(ApiKey, { foreignKey: "userId", as: "apiKeys" });
+ApiKey.belongsTo(User, { foreignKey: "userId", as: "user" });

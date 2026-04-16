@@ -15,7 +15,7 @@ const ContactMode = require("../models/ContactMode");
 const Grupo = require("../models/Grupo");
 const Automation = require("../models/Automation");
 const getToken = require("../helpers/get-token");
-const formatDate = require("../helpers/format-date");
+const { formatDate, formatMonth } = require("../helpers/format-date");
 const getUserByToken = require("../helpers/get-user-by-token");
 const logger = require("../logger/logger");
 const cacheManager = require("../utils/CacheManager");
@@ -460,7 +460,7 @@ module.exports = class CompanyController {
         const emailContent = terminatedTemplate({
           companyName,
           contractEndDate: formattedDate,
-          serviceEndDate: formatDate(serviceEndDate),
+          serviceEndDate: formatMonth(serviceEndDate),
         });
         await sendToAllUsers(emailSubject, emailContent);
       } else if (newStatus === "SUSPENSA") {

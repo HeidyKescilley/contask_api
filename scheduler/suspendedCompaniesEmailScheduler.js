@@ -4,7 +4,7 @@ const Company = require("../models/Company");
 const User = require("../models/User");
 const transporter = require("../services/emailService");
 const { suspendedCompaniesListTemplate } = require("../emails/templates");
-const formatDate = require("../helpers/format-date");
+const { formatDate } = require("../helpers/format-date");
 const logger = require("../logger/logger");
 
 const sendSuspendedCompaniesEmail = async () => {
