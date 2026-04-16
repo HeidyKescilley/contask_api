@@ -5,7 +5,7 @@ API privada para acesso aos dados do banco, destinada exclusivamente ao desenvol
 | | URL |
 |-|-----|
 | **Frontend** | `http://172.19.1.15:3000` |
-| **API (base URL)** | `http://172.19.1.15:5000` |
+| **API (base URL)** | `http://172.19.1.15:8800` |
 
 ---
 
@@ -111,23 +111,23 @@ A resposta sempre inclui `{ total, limit, offset, data: [...] }`.
 ```bash
 # Todas as empresas ativas do Simples com responsável fiscal = Heidy
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/companies?rule=Simples&status=ATIVA&respFiscalName=Heidy"
+  "http://172.19.1.15:8800/api/data/companies?rule=Simples&status=ATIVA&respFiscalName=Heidy"
 
 # Empresas com +30 funcionários, não arquivadas, ordenadas por nome
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/companies?employeesCount_min=30&isArchived=false&orderBy=name"
+  "http://172.19.1.15:8800/api/data/companies?employeesCount_min=30&isArchived=false&orderBy=name"
 
 # Empresas sem responsável fiscal (campo null)
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/companies?respFiscalId=null&isArchived=false"
+  "http://172.19.1.15:8800/api/data/companies?respFiscalId=null&isArchived=false"
 
 # Buscar por CNPJ parcial
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/companies?cnpj=22854614"
+  "http://172.19.1.15:8800/api/data/companies?cnpj=22854614"
 
 # Criadas em 2025, página 2
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/companies?createdAt_from=2025-01-01&createdAt_to=2025-12-31&limit=50&offset=50"
+  "http://172.19.1.15:8800/api/data/companies?createdAt_from=2025-01-01&createdAt_to=2025-12-31&limit=50&offset=50"
 ```
 
 ---
@@ -137,7 +137,7 @@ curl -H "X-API-Key: <key>" \
 Retorna empresa completa com impostos, obrigações, automações, grupo e modo de contato.
 
 ```bash
-curl -H "X-API-Key: <key>" http://172.19.1.15:5000/api/data/companies/3
+curl -H "X-API-Key: <key>" http://172.19.1.15:8800/api/data/companies/3
 ```
 
 ---
@@ -163,11 +163,11 @@ Senhas **nunca** são retornadas.
 ```bash
 # Todos do Fiscal com bonus
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/users?department=Fiscal&hasBonus=true"
+  "http://172.19.1.15:8800/api/data/users?department=Fiscal&hasBonus=true"
 
 # Busca pelo nome
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/users?name=beatriz"
+  "http://172.19.1.15:8800/api/data/users?name=beatriz"
 ```
 
 ---
@@ -177,7 +177,7 @@ curl -H "X-API-Key: <key>" \
 Retorna automações com lista de empresas vinculadas.
 
 ```bash
-curl -H "X-API-Key: <key>" http://172.19.1.15:5000/api/data/automations
+curl -H "X-API-Key: <key>" http://172.19.1.15:8800/api/data/automations
 ```
 
 ---
@@ -192,7 +192,7 @@ curl -H "X-API-Key: <key>" http://172.19.1.15:5000/api/data/automations
 
 ```bash
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/taxes?month=4&year=2026&type=DAS"
+  "http://172.19.1.15:8800/api/data/taxes?month=4&year=2026&type=DAS"
 ```
 
 ---
@@ -206,7 +206,7 @@ curl -H "X-API-Key: <key>" \
 
 ```bash
 curl -H "X-API-Key: <key>" \
-  "http://172.19.1.15:5000/api/data/obligations?month=4&year=2026"
+  "http://172.19.1.15:8800/api/data/obligations?month=4&year=2026"
 ```
 
 ---
@@ -217,7 +217,7 @@ curl -H "X-API-Key: <key>" \
 import requests
 
 KEY = "sua_chave_aqui"
-BASE = "http://172.19.1.15:5000"
+BASE = "http://172.19.1.15:8800"
 H = {"X-API-Key": KEY}
 
 # Empresas do Simples ativas com resp. fiscal = Heidy, com bônus
