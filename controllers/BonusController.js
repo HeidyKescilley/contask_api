@@ -35,20 +35,25 @@ async function getCompletedCompanyIds(period, department, companyIds, transactio
     .filter((t) => t.periodicity !== "trimestral" || [3, 6, 9, 12].includes(month))
     .map((t) => t.id);
 
-  // Obrigações visíveis (anuais só no mês correto)
+  // Obrigações visíveis (anuais aparecem no mês ANTERIOR ao vencimento, igual à UI)
   const allObls = await AccessoryObligation.findAll({ where: { department }, attributes: ["id", "periodicity", "deadlineMonth"], raw: true, transaction });
   const visibleObls = allObls.filter((o) => {
     if (o.periodicity !== "annual") return true;
     if (!o.deadlineMonth) return true;
-    return o.deadlineMonth === month;
+    const expectedDisplay = o.deadlineMonth === 1 ? 12 : o.deadlineMonth - 1;
+    return expectedDisplay === month;
   });
   const oblIds = visibleObls.map((o) => o.id);
 
   // Períodos de banco por obrigação
+  const year = parseInt(period.substring(0, 4), 10);
   const oblPeriodSet = new Set();
   for (const obl of visibleObls) {
     if (obl.periodicity === "biweekly") { oblPeriodSet.add(`${period}-1`); oblPeriodSet.add(`${period}-2`); }
-    else if (obl.periodicity === "annual") { oblPeriodSet.add(period.substring(0, 4)); }
+    else if (obl.periodicity === "annual") {
+      const dbYear = obl.deadlineMonth === 1 && month === 12 ? year + 1 : year;
+      oblPeriodSet.add(String(dbYear));
+    }
     else { oblPeriodSet.add(period); }
   }
 
@@ -64,7 +69,7 @@ async function getCompletedCompanyIds(period, department, companyIds, transactio
       : [],
     oblIds.length && oblPeriodSet.size
       ? CompanyObligationStatus.findAll({
-          where: { companyId: companyIds, obligationId: oblIds, period: { [Op.in]: [...oblPeriodSet] }, isManuallyExcluded: false, status: { [Op.ne]: "disabled" } },
+          where: { companyId: companyIds, obligationId: oblIds, period: { [Op.in]: [...oblPeriodSet] }, isManuallyExcluded: false, status: { [Op.notIn]: ["disabled", "not_applicable"] } },
           attributes: ["companyId", "status"],
           raw: true,
           transaction,
