@@ -27,6 +27,11 @@ class CacheManager {
     keys.forEach((key) => this.cache.del(key));
   }
 
+  invalidateAll() {
+    const allKeys = this.cache.keys();
+    if (allKeys.length > 0) this.cache.del(allKeys);
+  }
+
   invalidateByPrefix(prefix) {
     const keysToDelete = this.cache
       .keys()
