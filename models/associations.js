@@ -201,3 +201,34 @@ CompanyPeriodNote.belongsTo(User, { foreignKey: "updatedById", as: "updatedBy" }
 const ApiKey = require("./ApiKey");
 User.hasMany(ApiKey, { foreignKey: "userId", as: "apiKeys" });
 ApiKey.belongsTo(User, { foreignKey: "userId", as: "user" });
+
+// Associações para Disparo Automático de E-mails
+const EmailDispatch = require("./EmailDispatch");
+const EmailDispatchRun = require("./EmailDispatchRun");
+const EmailDispatchRunRecipient = require("./EmailDispatchRunRecipient");
+
+EmailDispatch.belongsToMany(Company, {
+  through: "EmailDispatchCompanies",
+  as: "companies",
+  foreignKey: "dispatchId",
+});
+Company.belongsToMany(EmailDispatch, {
+  through: "EmailDispatchCompanies",
+  as: "emailDispatches",
+  foreignKey: "companyId",
+});
+
+User.hasMany(EmailDispatch, { foreignKey: "createdById", as: "emailDispatches" });
+EmailDispatch.belongsTo(User, { foreignKey: "createdById", as: "createdBy" });
+
+EmailDispatch.hasMany(EmailDispatchRun, { foreignKey: "dispatchId", as: "runs", onDelete: "CASCADE" });
+EmailDispatchRun.belongsTo(EmailDispatch, { foreignKey: "dispatchId", as: "dispatch" });
+
+User.hasMany(EmailDispatchRun, { foreignKey: "triggeredById", as: "triggeredEmailRuns" });
+EmailDispatchRun.belongsTo(User, { foreignKey: "triggeredById", as: "triggeredBy" });
+
+EmailDispatchRun.hasMany(EmailDispatchRunRecipient, { foreignKey: "runId", as: "recipients", onDelete: "CASCADE" });
+EmailDispatchRunRecipient.belongsTo(EmailDispatchRun, { foreignKey: "runId", as: "run" });
+
+Company.hasMany(EmailDispatchRunRecipient, { foreignKey: "companyId", as: "emailDispatchRecipients" });
+EmailDispatchRunRecipient.belongsTo(Company, { foreignKey: "companyId", as: "company" });
