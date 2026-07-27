@@ -48,17 +48,23 @@ async function executeDispatch(dispatchId, { triggerType, triggeredById = null }
   }
 
   const companies = dispatch.companies || [];
+  // Cada endereço de e-mail de cada empresa conta como um destinatário individual
+  // (necessário para rastrear abertura por endereço, não só por empresa).
+  const totalRecipients = companies.reduce(
+    (sum, c) => sum + Math.max(parseRecipientEmails(c).length, 1),
+    0
+  );
   const run = await EmailDispatchRun.create({
     dispatchId: dispatch.id,
     triggerType,
     triggeredById,
     startedAt: new Date(),
     status: "running",
-    totalRecipients: companies.length,
+    totalRecipients,
   });
 
   logger.info(
-    `[EmailDispatch] Iniciando execução #${run.id} da automação "${dispatch.name}" (${triggerType}) para ${companies.length} empresa(s).`
+    `[EmailDispatch] Iniciando execução #${run.id} da automação "${dispatch.name}" (${triggerType}) para ${companies.length} empresa(s) / ${totalRecipients} destinatário(s).`
   );
 
   let transporter;
@@ -101,44 +107,49 @@ async function executeDispatch(dispatchId, { triggerType, triggeredById = null }
       continue;
     }
 
-    const trackingToken =
-      dispatch.bodyFormat === "html" ? crypto.randomBytes(16).toString("hex") : null;
+    // Um e-mail separado por endereço — é a única forma de saber depois QUAL
+    // endereço especificamente abriu a mensagem (um pixel só, compartilhado
+    // entre vários destinatários de um mesmo envio, não permite distinguir isso).
+    for (const email of emails) {
+      const trackingToken =
+        dispatch.bodyFormat === "html" ? crypto.randomBytes(16).toString("hex") : null;
 
-    const mailOptions = {
-      from: `"${dispatch.fromName}" <${dispatch.fromEmail}>`,
-      to: emails.join(","),
-      subject: dispatch.subject,
-    };
-    if (dispatch.bodyFormat === "html") {
-      mailOptions.html = buildHtmlBody(dispatch, !!signatureAttachment, trackingToken);
-      if (signatureAttachment) mailOptions.attachments = [signatureAttachment];
-    } else {
-      mailOptions.text = dispatch.bodyContent || "";
-    }
+      const mailOptions = {
+        from: `"${dispatch.fromName}" <${dispatch.fromEmail}>`,
+        to: email,
+        subject: dispatch.subject,
+      };
+      if (dispatch.bodyFormat === "html") {
+        mailOptions.html = buildHtmlBody(dispatch, !!signatureAttachment, trackingToken);
+        if (signatureAttachment) mailOptions.attachments = [signatureAttachment];
+      } else {
+        mailOptions.text = dispatch.bodyContent || "";
+      }
 
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      successCount++;
-      await EmailDispatchRunRecipient.create({
-        runId: run.id,
-        companyId: company.id,
-        emailTo: emails.join(","),
-        status: "sent",
-        smtpResponse: info.response || info.messageId || null,
-        sentAt: new Date(),
-        trackingToken,
-      });
-      logger.info(`[EmailDispatch] Execução #${run.id}: enviado para empresa ${company.id} (${company.name}).`);
-    } catch (err) {
-      failureCount++;
-      await EmailDispatchRunRecipient.create({
-        runId: run.id,
-        companyId: company.id,
-        emailTo: emails.join(","),
-        status: "failed",
-        errorMessage: err.message,
-      });
-      logger.error(`[EmailDispatch] Execução #${run.id}: falha ao enviar para empresa ${company.id} (${company.name}): ${err.message}`);
+      try {
+        const info = await transporter.sendMail(mailOptions);
+        successCount++;
+        await EmailDispatchRunRecipient.create({
+          runId: run.id,
+          companyId: company.id,
+          emailTo: email,
+          status: "sent",
+          smtpResponse: info.response || info.messageId || null,
+          sentAt: new Date(),
+          trackingToken,
+        });
+        logger.info(`[EmailDispatch] Execução #${run.id}: enviado para ${email} (empresa ${company.id} - ${company.name}).`);
+      } catch (err) {
+        failureCount++;
+        await EmailDispatchRunRecipient.create({
+          runId: run.id,
+          companyId: company.id,
+          emailTo: email,
+          status: "failed",
+          errorMessage: err.message,
+        });
+        logger.error(`[EmailDispatch] Execução #${run.id}: falha ao enviar para ${email} (empresa ${company.id} - ${company.name}): ${err.message}`);
+      }
     }
   }
 
