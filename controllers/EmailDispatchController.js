@@ -175,6 +175,13 @@ module.exports = class EmailDispatchController {
 
       payload.nextRunAt = payload.mode === "automatic" ? computeNextRun(payload, new Date()) : null;
 
+      // Toda edição exige nova aprovação de um administrador antes de voltar a rodar
+      // (manual ou automaticamente) — evita que uma alteração (credenciais, empresas,
+      // conteúdo, agendamento) passe a valer sem revisão.
+      payload.isApproved = false;
+      payload.approvedById = null;
+      payload.approvedAt = null;
+
       await dispatch.update(payload);
 
       if (req.body.companyIds) {
@@ -195,6 +202,7 @@ module.exports = class EmailDispatchController {
       const dispatches = await EmailDispatch.findAll({
         include: [
           { model: Company, as: "companies", attributes: ["id"], through: { attributes: [] } },
+          { model: User, as: "approvedBy", attributes: ["id", "name"] },
           {
             model: EmailDispatchRun,
             as: "runs",
@@ -216,7 +224,10 @@ module.exports = class EmailDispatchController {
   static async getOne(req, res) {
     try {
       const dispatch = await EmailDispatch.findByPk(req.params.id, {
-        include: [{ model: Company, as: "companies", attributes: ["id"], through: { attributes: [] } }],
+        include: [
+          { model: Company, as: "companies", attributes: ["id"], through: { attributes: [] } },
+          { model: User, as: "approvedBy", attributes: ["id", "name"] },
+        ],
       });
       if (!dispatch) return res.status(404).json({ message: "Automação não encontrada." });
       return res.status(200).json(serializeDispatch(dispatch));
@@ -260,10 +271,35 @@ module.exports = class EmailDispatchController {
     }
   }
 
+  static async approve(req, res) {
+    try {
+      const dispatch = await EmailDispatch.findByPk(req.params.id);
+      if (!dispatch) return res.status(404).json({ message: "Automação não encontrada." });
+
+      await dispatch.update({
+        isApproved: true,
+        approvedById: req.user.id,
+        approvedAt: new Date(),
+      });
+
+      logger.info(`[EmailDispatch] Automação "${dispatch.name}" (id ${dispatch.id}) aprovada por ${req.user.email}.`);
+      return res.status(200).json(serializeDispatch(dispatch));
+    } catch (error) {
+      logger.error(`[EmailDispatch] Erro ao aprovar automação ${req.params.id}: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
   static async runNow(req, res) {
     try {
       const dispatch = await EmailDispatch.findByPk(req.params.id);
       if (!dispatch) return res.status(404).json({ message: "Automação não encontrada." });
+
+      if (!dispatch.isApproved) {
+        return res.status(403).json({
+          message: "Esta automação ainda não foi aprovada por um administrador e não pode ser executada.",
+        });
+      }
 
       executeDispatch(dispatch.id, { triggerType: "manual", triggeredById: req.user.id }).catch((err) => {
         logger.error(`[EmailDispatch] Erro ao rodar manualmente a automação ${dispatch.id}: ${err.message}`);

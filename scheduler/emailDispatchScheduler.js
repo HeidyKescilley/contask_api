@@ -12,6 +12,7 @@ const runDueDispatches = async () => {
       where: {
         mode: "automatic",
         isActive: true,
+        isApproved: true,
         nextRunAt: { [Op.lte]: now },
       },
     });

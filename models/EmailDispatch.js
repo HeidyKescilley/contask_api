@@ -80,6 +80,24 @@ const EmailDispatch = db.define(
       allowNull: false,
       defaultValue: true,
     },
+    isApproved: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Precisa ser aprovada por um admin antes de rodar (manual ou automaticamente). Reseta a cada criação/edição.",
+    },
+    approvedById: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: "Users",
+        key: "id",
+      },
+    },
+    approvedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     createdById: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -92,7 +110,7 @@ const EmailDispatch = db.define(
   {
     timestamps: true,
     indexes: [
-      { fields: ["mode", "isActive", "nextRunAt"] },
+      { fields: ["mode", "isActive", "isApproved", "nextRunAt"] },
       { fields: ["createdById"] },
     ],
   }

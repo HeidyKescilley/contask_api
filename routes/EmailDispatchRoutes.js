@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const EmailDispatchController = require("../controllers/EmailDispatchController");
 const verifyToken = require("../helpers/verify-token");
+const verifyAdmin = require("../helpers/verify-admin");
 const activityLogger = require("../middlewares/activityLogger");
 
 const signaturesDir = path.join(__dirname, "..", "public", "signatures");
@@ -43,6 +44,7 @@ router.get("/:id", verifyToken, activityLogger, EmailDispatchController.getOne);
 router.patch("/:id", verifyToken, upload.single("signatureImage"), activityLogger, EmailDispatchController.update);
 router.delete("/:id", verifyToken, activityLogger, EmailDispatchController.remove);
 router.patch("/:id/companies", verifyToken, activityLogger, EmailDispatchController.setCompanies);
+router.post("/:id/approve", verifyToken, verifyAdmin, activityLogger, EmailDispatchController.approve);
 router.post("/:id/run", verifyToken, activityLogger, EmailDispatchController.runNow);
 router.get("/:id/runs", verifyToken, activityLogger, EmailDispatchController.listRuns);
 

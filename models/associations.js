@@ -221,6 +221,9 @@ Company.belongsToMany(EmailDispatch, {
 User.hasMany(EmailDispatch, { foreignKey: "createdById", as: "emailDispatches" });
 EmailDispatch.belongsTo(User, { foreignKey: "createdById", as: "createdBy" });
 
+User.hasMany(EmailDispatch, { foreignKey: "approvedById", as: "approvedEmailDispatches" });
+EmailDispatch.belongsTo(User, { foreignKey: "approvedById", as: "approvedBy" });
+
 EmailDispatch.hasMany(EmailDispatchRun, { foreignKey: "dispatchId", as: "runs", onDelete: "CASCADE" });
 EmailDispatchRun.belongsTo(EmailDispatch, { foreignKey: "dispatchId", as: "dispatch" });
 
