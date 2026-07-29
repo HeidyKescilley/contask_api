@@ -8,7 +8,7 @@ const CompanyTaxStatus = require("../models/CompanyTaxStatus");
 const CompanyObligationStatus = require("../models/CompanyObligationStatus");
 const AccessoryObligation = require("../models/AccessoryObligation");
 const cacheManager = require("./CacheManager");
-const { getCurrentPeriod } = require("./businessDays");
+const { getObligationPeriodForDisplay, obligationIsActiveForPeriod } = require("./businessDays");
 const { getDeptConfig } = require("../config/departmentConfig");
 const logger = require("../logger/logger");
 
@@ -42,16 +42,24 @@ async function checkAndUpdateCompletion(companyId, taxPeriod, department) {
     // Busca IDs de impostos e obrigações do departamento
     const [deptTaxes, deptObls] = await Promise.all([
       CompanyTax.findAll({ where: { department }, attributes: ["id"], raw: true }),
-      AccessoryObligation.findAll({ where: { department }, attributes: ["id", "periodicity"], raw: true }),
+      AccessoryObligation.findAll({ where: { department }, attributes: ["id", "periodicity", "deadlineMonth"], raw: true }),
     ]);
 
     const taxIds = deptTaxes.map((t) => t.id);
     const oblIds = deptObls.map((o) => o.id);
 
-    // Monta conjunto de períodos relevantes (mensal + quaisquer períodos especiais)
+    // Monta conjunto de períodos relevantes (mensal + quinzenais/anuais resolvidos para
+    // o MESMO mês de competência que está sendo checado — não o mês corrente do relógio,
+    // que é o que getCurrentPeriod(obl) sem data de referência retornaria por engano).
     const periodSet = new Set([taxPeriod]);
     for (const obl of deptObls) {
-      periodSet.add(getCurrentPeriod(obl));
+      if (!obligationIsActiveForPeriod(obl, taxPeriod)) continue;
+      const resolved = getObligationPeriodForDisplay(obl, taxPeriod);
+      if (Array.isArray(resolved)) {
+        resolved.forEach((p) => periodSet.add(p));
+      } else {
+        periodSet.add(resolved);
+      }
     }
 
     // Conta totais e pendentes

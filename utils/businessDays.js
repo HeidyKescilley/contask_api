@@ -162,6 +162,47 @@ function formatDeadline(date) {
   return `${d}/${m}/${y}`;
 }
 
+/**
+ * Resolve o(s) período(s) de banco para uma obrigação dado um displayPeriod YYYY-MM
+ * (o mês de competência sendo exibido/checado, tipicamente "mês anterior").
+ * - Mensal: "YYYY-MM"
+ * - Quinzenal: ["YYYY-MM-1", "YYYY-MM-2"] (ambas as quinzenas do mês)
+ * - Anual: "YYYY" (ou ano seguinte, se vence em janeiro e o mês exibido é dezembro)
+ * Se displayPeriod não for fornecido, cai para getCurrentPeriod(obligation) (mês corrente).
+ *
+ * Mesma lógica usada em ObligationController — mantida aqui para que o
+ * completionChecker (que decide fiscalCompletedAt/dpCompletedAt/contabilCompletedAt)
+ * cheque exatamente os mesmos períodos que a tela mostra ao usuário.
+ */
+function getObligationPeriodForDisplay(obligation, displayPeriod) {
+  if (!displayPeriod) return getCurrentPeriod(obligation);
+  if (obligation.periodicity === "biweekly") {
+    return [`${displayPeriod}-1`, `${displayPeriod}-2`];
+  }
+  if (obligation.periodicity === "annual") {
+    const [displayYear, displayMonthNum] = displayPeriod.split("-").map(Number);
+    // Se vence em janeiro e exibimos em dezembro → o registro de DB pertence ao próximo ano
+    if (obligation.deadlineMonth === 1 && displayMonthNum === 12) {
+      return String(displayYear + 1);
+    }
+    return String(displayYear);
+  }
+  return displayPeriod;
+}
+
+/**
+ * Retorna false para obrigações anuais cujo deadlineMonth não corresponde ao mês
+ * do displayPeriod fornecido — obrigações anuais só se aplicam no mês anterior
+ * ao vencimento, em nenhum outro mês do ano.
+ */
+function obligationIsActiveForPeriod(obligation, displayPeriod) {
+  if (obligation.periodicity !== "annual") return true;
+  if (!obligation.deadlineMonth) return true; // segurança: considera ativa se não configurado
+  const displayMonth = parseInt(displayPeriod.split("-")[1], 10);
+  const expectedDisplay = obligation.deadlineMonth === 1 ? 12 : obligation.deadlineMonth - 1;
+  return displayMonth === expectedDisplay;
+}
+
 module.exports = {
   getHolidays,
   isBusinessDay,
@@ -169,5 +210,7 @@ module.exports = {
   getLastBusinessDay,
   getDeadlineDate,
   getCurrentPeriod,
+  getObligationPeriodForDisplay,
+  obligationIsActiveForPeriod,
   formatDeadline,
 };
