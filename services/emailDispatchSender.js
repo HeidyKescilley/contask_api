@@ -10,6 +10,7 @@ const EmailDispatchRunRecipient = require("../models/EmailDispatchRunRecipient")
 const Company = require("../models/Company");
 const { decrypt } = require("../helpers/crypto");
 const { computeNextRun } = require("../utils/nextRun");
+const { resolveDispatchVariables, substituteVariables } = require("../utils/templateVariables");
 const logger = require("../logger/logger");
 
 function parseRecipientEmails(company) {
@@ -28,8 +29,8 @@ function buildSignatureAttachment(dispatch) {
   };
 }
 
-function buildHtmlBody(dispatch, hasSignature, trackingToken) {
-  let html = dispatch.bodyContent || "";
+function buildHtmlBody(bodyContent, hasSignature, trackingToken) {
+  let html = bodyContent || "";
   if (hasSignature) {
     html += `<br/><img src="cid:signature-image" alt="Assinatura" />`;
   }
@@ -89,6 +90,7 @@ async function executeDispatch(dispatchId, { triggerType, triggeredById = null }
   }
 
   const signatureAttachment = buildSignatureAttachment(dispatch);
+  const referenceDate = new Date();
   let successCount = 0;
   let failureCount = 0;
 
@@ -107,6 +109,12 @@ async function executeDispatch(dispatchId, { triggerType, triggeredById = null }
       continue;
     }
 
+    // Substitui {{{RAZAO_SOCIAL}}}, {{{MES_PASSADO}}} e {{{MES_ATUAL}}} no assunto e
+    // no corpo com os valores desta empresa/período antes de montar o e-mail.
+    const vars = resolveDispatchVariables(company, referenceDate);
+    const subject = substituteVariables(dispatch.subject, vars);
+    const bodyContent = substituteVariables(dispatch.bodyContent, vars);
+
     // Um e-mail separado por endereço — é a única forma de saber depois QUAL
     // endereço especificamente abriu a mensagem (um pixel só, compartilhado
     // entre vários destinatários de um mesmo envio, não permite distinguir isso).
@@ -117,13 +125,13 @@ async function executeDispatch(dispatchId, { triggerType, triggeredById = null }
       const mailOptions = {
         from: `"${dispatch.fromName}" <${dispatch.fromEmail}>`,
         to: email,
-        subject: dispatch.subject,
+        subject,
       };
       if (dispatch.bodyFormat === "html") {
-        mailOptions.html = buildHtmlBody(dispatch, !!signatureAttachment, trackingToken);
+        mailOptions.html = buildHtmlBody(bodyContent, !!signatureAttachment, trackingToken);
         if (signatureAttachment) mailOptions.attachments = [signatureAttachment];
       } else {
-        mailOptions.text = dispatch.bodyContent || "";
+        mailOptions.text = bodyContent || "";
       }
 
       try {
