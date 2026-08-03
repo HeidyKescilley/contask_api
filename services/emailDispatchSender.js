@@ -30,14 +30,24 @@ function buildSignatureAttachment(dispatch) {
 }
 
 function buildHtmlBody(bodyContent, hasSignature, trackingToken) {
-  let html = bodyContent || "";
+  let extras = "";
   if (hasSignature) {
-    html += `<br/><img src="cid:signature-image" alt="Assinatura" />`;
+    extras += `<br/><img src="cid:signature-image" alt="Assinatura" />`;
   }
   if (trackingToken) {
-    html += `<img src="${process.env.PUBLIC_API_URL}/email-dispatch/track/${trackingToken}.png" width="1" height="1" style="display:none" alt="" />`;
+    extras += `<img src="${process.env.PUBLIC_API_URL}/email-dispatch/track/${trackingToken}.png" width="1" height="1" style="display:none" alt="" />`;
   }
-  return html;
+
+  const html = bodyContent || "";
+  if (!extras) return html;
+
+  // Se for um documento HTML completo (importado, com <html>/<body>), insere antes
+  // de </body> — colar depois de </html> deixaria a assinatura/pixel fora do documento.
+  const bodyCloseIndex = html.search(/<\/body\s*>/i);
+  if (bodyCloseIndex !== -1) {
+    return html.slice(0, bodyCloseIndex) + extras + html.slice(bodyCloseIndex);
+  }
+  return html + extras;
 }
 
 async function executeDispatch(dispatchId, { triggerType, triggeredById = null } = {}) {
