@@ -11,6 +11,11 @@ const sequelize = new Sequelize(
     timezone: "-03:00",
     dialectOptions: {
       timezone: "-03:00",
+      charset: "utf8mb4",
+    },
+    define: {
+      charset: "utf8mb4",
+      collate: "utf8mb4_unicode_ci",
     },
   }
 );
