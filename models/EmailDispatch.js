@@ -75,6 +75,12 @@ const EmailDispatch = db.define(
       type: DataTypes.TEXT("long"),
       allowNull: false,
     },
+    bodySourceMode: {
+      type: DataTypes.ENUM("editor", "import"),
+      allowNull: false,
+      defaultValue: "editor",
+      comment: "Como o bodyContent foi produzido — 'import' evita jogar HTML completo importado de volta no editor rico (Quill reformata e perde estilos/layout).",
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       allowNull: false,

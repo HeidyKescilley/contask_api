@@ -89,6 +89,7 @@ module.exports = class EmailDispatchController {
         fromName,
         fromPasswordEncrypted: encrypt(fromPassword),
         signatureImagePath: req.file ? req.file.filename : null,
+        bodySourceMode: req.body.bodySourceMode === "import" ? "import" : "editor",
         scheduleFrequency: mode === "automatic" ? req.body.scheduleFrequency : null,
         scheduleDayOfWeek: toIntOrNull(req.body.scheduleDayOfWeek),
         scheduleDayOfMonth: toIntOrNull(req.body.scheduleDayOfMonth),
@@ -146,6 +147,7 @@ module.exports = class EmailDispatchController {
         subject: subject ?? dispatch.subject,
         bodyFormat: bodyFormat ?? dispatch.bodyFormat,
         bodyContent: bodyContent ?? dispatch.bodyContent,
+        bodySourceMode: req.body.bodySourceMode === "import" ? "import" : "editor",
         fromEmail: fromEmail ?? dispatch.fromEmail,
         fromName: fromName ?? dispatch.fromName,
         scheduleFrequency: (mode ?? dispatch.mode) === "automatic"
