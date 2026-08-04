@@ -137,6 +137,10 @@ async function executeDispatch(dispatchId, { triggerType, triggeredById = null }
         to: email,
         subject,
       };
+      if (dispatch.ccEmail) {
+        const cc = dispatch.ccEmail.split(",").map((e) => e.trim()).filter(Boolean);
+        if (cc.length > 0) mailOptions.cc = cc.join(",");
+      }
       if (dispatch.bodyFormat === "html") {
         mailOptions.html = buildHtmlBody(bodyContent, !!signatureAttachment, trackingToken);
         if (signatureAttachment) mailOptions.attachments = [signatureAttachment];

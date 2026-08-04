@@ -58,6 +58,11 @@ const EmailDispatch = db.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    ccEmail: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: "E-mail(s) em cópia visível (Cc), separados por vírgula — aparece no cabeçalho pro destinatário.",
+    },
     signatureImagePath: {
       type: DataTypes.STRING,
       allowNull: true,

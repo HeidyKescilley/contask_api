@@ -73,6 +73,7 @@ module.exports = class EmailDispatchController {
         fromEmail,
         fromPassword,
         fromName,
+        ccEmail,
       } = req.body;
 
       if (!name || !mode || !subject || !bodyFormat || !bodyContent || !fromEmail || !fromPassword || !fromName) {
@@ -87,6 +88,7 @@ module.exports = class EmailDispatchController {
         bodyContent,
         fromEmail,
         fromName,
+        ccEmail: ccEmail || null,
         fromPasswordEncrypted: encrypt(fromPassword),
         signatureImagePath: req.file ? req.file.filename : null,
         bodySourceMode: req.body.bodySourceMode === "import" ? "import" : "editor",
@@ -150,6 +152,7 @@ module.exports = class EmailDispatchController {
         bodySourceMode: req.body.bodySourceMode === "import" ? "import" : "editor",
         fromEmail: fromEmail ?? dispatch.fromEmail,
         fromName: fromName ?? dispatch.fromName,
+        ccEmail: req.body.ccEmail !== undefined ? (req.body.ccEmail || null) : dispatch.ccEmail,
         scheduleFrequency: (mode ?? dispatch.mode) === "automatic"
           ? req.body.scheduleFrequency ?? dispatch.scheduleFrequency
           : null,
