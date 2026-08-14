@@ -40,6 +40,14 @@ router.patch(
   AdminController.archiveCompanyManually
 );
 
+// ROTA PARA DESARQUIVAR EMPRESA MANUALMENTE (ADMIN)
+router.patch(
+  "/company/:id/unarchive",
+  verifyAdmin,
+  activityLogger,
+  AdminController.unarchiveCompanyManually
+);
+
 router.patch(
   "/user/:id/change-password",
   verifyAdmin,

@@ -186,6 +186,65 @@ module.exports = {
     }
   },
 
+  unarchiveCompanyManually: async (req, res) => {
+    const companyId = req.params.id;
+    try {
+      logger.info(
+        `Admin (${req.user.email}) solicitou o desarquivamento da empresa ID: ${companyId}.`
+      );
+
+      const company = await Company.findByPk(companyId);
+
+      if (!company) {
+        logger.warn(
+          `Desarquivamento falhou: Empresa não encontrada (ID: ${companyId})`
+        );
+        return res.status(404).json({ message: "Empresa não encontrada." });
+      }
+
+      if (!company.isArchived) {
+        logger.info(
+          `Empresa (ID: ${companyId}) já está ativa. Nenhuma ação tomada.`
+        );
+        return res
+          .status(200)
+          .json({ message: "Empresa já se encontra desarquivada." });
+      }
+
+      company.isArchived = false;
+      await company.save();
+
+      logger.info(
+        `Empresa ${company.name} (ID: ${companyId}) desarquivada manualmente por Admin (${req.user.email}).`
+      );
+
+      cacheManager.invalidateByPrefix("my_companies_");
+      await cacheManager.reloadAllGlobal();
+
+      if (req.user && req.user.id) {
+        registerMyCompaniesCache(req.user);
+        await cacheManager.reloadMyCompanies(req.user.id);
+        logger.info(
+          `Cache 'my_companies_${req.user.id}' recarregado para o admin.`
+        );
+      }
+
+      logger.info(
+        `Caches recarregados após desarquivamento da empresa ID: ${companyId}`
+      );
+
+      return res
+        .status(200)
+        .json({ message: "Empresa desarquivada com sucesso." });
+    } catch (error) {
+      logger.error(
+        `Erro ao desarquivar a empresa (ID: ${companyId}): ${error.message}`,
+        { stack: error.stack }
+      );
+      return res.status(500).json({ message: "Erro ao desarquivar a empresa." });
+    }
+  },
+
   changeUserPasswordByAdmin: async (req, res) => {
     const userId = req.params.id;
     const { newPassword } = req.body;
