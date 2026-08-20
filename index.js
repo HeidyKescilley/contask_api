@@ -8,6 +8,7 @@ require("./scheduler/suspendedCompaniesEmailScheduler");
 require("./scheduler/archiveCompaniesScheduler");
 require("./scheduler/birthdayScheduler");
 require("./scheduler/emailDispatchScheduler");
+require("./scheduler/certificateExpirationScheduler");
 
 const app = express();
 
@@ -33,6 +34,7 @@ const ApiKey = require("./models/ApiKey");
 const EmailDispatch = require("./models/EmailDispatch");
 const EmailDispatchRun = require("./models/EmailDispatchRun");
 const EmailDispatchRunRecipient = require("./models/EmailDispatchRunRecipient");
+const Certificate = require("./models/Certificate");
 
 // Importando associações
 require("./models/associations");
@@ -88,6 +90,7 @@ const OrientationRoutes = require("./routes/OrientationRoutes");
 const ApiKeyRoutes = require("./routes/ApiKeyRoutes");
 const DataApiRoutes = require("./routes/DataApiRoutes");
 const EmailDispatchRoutes = require("./routes/EmailDispatchRoutes");
+const CertificateRoutes = require("./routes/CertificateRoutes");
 
 app.use("/", UserRoutes);
 app.use("/company", CompanyRoutes);
@@ -104,6 +107,7 @@ app.use("/orientation", OrientationRoutes);
 app.use("/api-keys", ApiKeyRoutes);
 app.use("/api/data", DataApiRoutes);
 app.use("/email-dispatch", EmailDispatchRoutes);
+app.use("/certificate", CertificateRoutes);
 
 const errorHandler = require("./middlewares/errorHandler");
 app.use(errorHandler);

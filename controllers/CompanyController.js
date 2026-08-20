@@ -32,6 +32,7 @@ const { checkAndUpdateCompletion } = require("../utils/completionChecker");
 const CompanyTax = require("../models/CompanyTax");
 const AccessoryObligation = require("../models/AccessoryObligation");
 const CompanyPeriodNote = require("../models/CompanyPeriodNote");
+const Certificate = require("../models/Certificate");
 
 // Retorna o período do mês anterior no formato YYYY-MM
 // Na contabilidade, sempre trabalhamos com a competência anterior (mês passado)
@@ -99,13 +100,50 @@ const USER_ONLY_INCLUDES = [
   { model: User, as: "respContabil", attributes: ["id", "name"] },
 ];
 
+const CERTIFICATE_INCLUDE = {
+  model: Certificate,
+  as: "certificate",
+  attributes: ["id", "validUntil"],
+};
+
+// Calcula o status de cor do certificado a partir da data de validade:
+// verde (>15 dias), amarelo (<=15 dias), vermelho (vencido), cinza (sem certificado).
+const CERTIFICATE_ALERT_DAYS = 15;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function computeCertificateStatus(validUntil) {
+  if (!validUntil) return "cinza";
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const validoAte = new Date(validUntil);
+  validoAte.setHours(0, 0, 0, 0);
+  const diasRestantes = Math.ceil((validoAte.getTime() - hoje.getTime()) / MS_PER_DAY);
+  if (diasRestantes < 0) return "vermelho";
+  if (diasRestantes <= CERTIFICATE_ALERT_DAYS) return "amarelo";
+  return "verde";
+}
+
+// Anexa certificateStatus/certificateValidUntil a uma lista de Companies
+// (já incluindo CERTIFICATE_INCLUDE), removendo o objeto aninhado "certificate".
+function attachCertificateStatus(companies) {
+  return companies.map((company) => {
+    const plain = company.get({ plain: true });
+    const validUntil = plain.certificate?.validUntil || null;
+    plain.certificateStatus = computeCertificateStatus(validUntil);
+    plain.certificateValidUntil = validUntil;
+    delete plain.certificate;
+    return plain;
+  });
+}
+
 // ===================== REGISTRO DOS CACHES =====================
 
 cacheManager.register("companies_all", async () => {
-  return Company.findAll({
-    include: STANDARD_INCLUDES,
+  const companies = await Company.findAll({
+    include: [...STANDARD_INCLUDES, CERTIFICATE_INCLUDE],
     attributes: COMPANY_ATTRIBUTES,
   });
+  return attachCertificateStatus(companies);
 });
 
 cacheManager.register("recent_companies", async () => {
@@ -147,11 +185,12 @@ function registerMyCompaniesCache(user) {
   };
 
   cacheManager.register(key, async () => {
-    return Company.findAll({
+    const companies = await Company.findAll({
       where: whereClause,
-      include: STANDARD_INCLUDES,
+      include: [...STANDARD_INCLUDES, CERTIFICATE_INCLUDE],
       attributes: COMPANY_ATTRIBUTES,
     });
+    return attachCertificateStatus(companies);
   });
 
   return key;
@@ -584,11 +623,12 @@ module.exports = class CompanyController {
 
       // Registrar empresas do agente (ATIVA + SUSPENSA/BAIXADA/DISTRATO até o mês do status)
       cacheManager.register(myCompaniesKey, async () => {
-        return Company.findAll({
+        const companies = await Company.findAll({
           where: whereClause,
-          include: STANDARD_INCLUDES,
+          include: [...STANDARD_INCLUDES, CERTIFICATE_INCLUDE],
           attributes: COMPANY_ATTRIBUTES,
         });
+        return attachCertificateStatus(companies);
       });
 
       const companies = await cacheManager.getOrFetch(myCompaniesKey);

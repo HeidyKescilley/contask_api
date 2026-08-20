@@ -39,6 +39,10 @@ const activitySuspensionNotificationTemplate = loadTemplate("activitySuspensionN
 const activitySuspensionReminderTemplate = loadTemplate("activitySuspensionReminder");
 const activitySuspensionExtensionTemplate = loadTemplate("activitySuspensionExtension");
 
+// Templates para vencimento de certificados digitais
+const certificateExpiring15DaysTemplate = loadTemplate("certificateExpiring15Days");
+const certificateExpiring1DayTemplate = loadTemplate("certificateExpiring1Day");
+
 module.exports = {
   activeTemplate,
   closedTemplate,
@@ -53,4 +57,6 @@ module.exports = {
   activitySuspensionNotificationTemplate,
   activitySuspensionReminderTemplate,
   activitySuspensionExtensionTemplate,
+  certificateExpiring15DaysTemplate,
+  certificateExpiring1DayTemplate,
 };

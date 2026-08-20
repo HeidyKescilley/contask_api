@@ -197,6 +197,13 @@ CompanyPeriodNote.belongsTo(Company, { foreignKey: "companyId", as: "company" })
 User.hasMany(CompanyPeriodNote, { foreignKey: "updatedById", as: "periodNotes" });
 CompanyPeriodNote.belongsTo(User, { foreignKey: "updatedById", as: "updatedBy" });
 
+// Associações para Certificados Digitais
+const Certificate = require("./Certificate");
+Company.hasOne(Certificate, { foreignKey: "companyId", as: "certificate", onDelete: "CASCADE" });
+Certificate.belongsTo(Company, { foreignKey: "companyId", as: "company" });
+User.hasMany(Certificate, { foreignKey: "importedById", as: "importedCertificates" });
+Certificate.belongsTo(User, { foreignKey: "importedById", as: "importedBy" });
+
 // Associações para ApiKey
 const ApiKey = require("./ApiKey");
 User.hasMany(ApiKey, { foreignKey: "userId", as: "apiKeys" });

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Certificado Digital Vencendo</title>
+  <style>
+    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .header { background-color: #f59e0b; padding: 28px 32px; }
+    .header h1 { margin: 0; color: #ffffff; font-size: 22px; }
+    .header p { margin: 6px 0 0; color: #fef3c7; font-size: 14px; }
+    .body { padding: 32px; color: #374151; }
+    .body p { margin: 0 0 16px; line-height: 1.6; font-size: 15px; }
+    .countdown { text-align: center; background: #fffbeb; border: 2px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 24px 0; }
+    .countdown .days { font-size: 48px; font-weight: 800; color: #f59e0b; line-height: 1; }
+    .countdown .label { font-size: 14px; color: #6b7280; margin-top: 6px; }
+    .info-box { background: #f9fafb; border-left: 4px solid #f59e0b; border-radius: 4px; padding: 16px 20px; margin: 24px 0; }
+    .info-box table { width: 100%; border-collapse: collapse; }
+    .info-box td { padding: 6px 0; font-size: 14px; color: #374151; }
+    .info-box td:first-child { font-weight: 600; width: 140px; color: #6b7280; }
+    .alert-box { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 4px; padding: 14px 18px; margin-top: 16px; font-size: 14px; color: #1e3a8a; line-height: 1.5; }
+    .alert-box strong { color: #1e3a8a; }
+    .footer { background: #f9fafb; border-top: 1px solid #e5e7eb; padding: 20px 32px; text-align: center; font-size: 12px; color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚠️ Certificado Digital Vencendo</h1>
+      <p>O certificado digital da sua empresa está próximo do vencimento</p>
+    </div>
+    <div class="body">
+      <p>Olá! O certificado digital (e-CNPJ) da empresa abaixo está prestes a vencer.</p>
+
+      <div class="countdown">
+        <div class="days">{{daysRemaining}}</div>
+        <div class="label">dia(s) restante(s)</div>
+      </div>
+
+      <div class="info-box">
+        <table>
+          <tr>
+            <td>Empresa:</td>
+            <td><strong>{{companyName}}</strong></td>
+          </tr>
+          <tr>
+            <td>CNPJ:</td>
+            <td>{{cnpj}}</td>
+          </tr>
+          <tr>
+            <td>Validade:</td>
+            <td><strong>{{validUntil}}</strong></td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="alert-box">
+        📎 Ao renovar o certificado, por favor envie o novo arquivo (.pfx) e a respectiva senha para
+        <strong>rodrigo.fernandes@contelb.com.br</strong>, para que possamos atualizá-lo em nossos sistemas
+        e evitar interrupções nos serviços que dependem dele.
+      </div>
+
+      <p style="margin-top: 24px;">Atenciosamente,<br /><strong>Equipe Contask</strong></p>
+    </div>
+    <div class="footer">
+      Este é um email automático. Por favor, não responda.
+    </div>
+  </div>
+</body>
+</html>
