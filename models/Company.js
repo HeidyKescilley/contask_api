@@ -126,10 +126,11 @@ const Company = db.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-    accountingMonthsCount: {
+    contabilNota: {
       type: DataTypes.INTEGER,
       allowNull: true,
       defaultValue: null,
+      validate: { min: 1, max: 5 },
     },
     isHeadquarters: {
       type: DataTypes.BOOLEAN,

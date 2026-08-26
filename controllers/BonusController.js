@@ -94,8 +94,13 @@ const FACTOR_KEYS = {
   DP_FATOR_1: "dp_fator_1",
   DP_FATOR_2: "dp_fator_2",
   FISCAL_VALOR_BASE_C: "fiscal_valor_base_c",
-  CONTABIL_VALOR_MES: "contabil_valor_mes",
+  CONTABIL_FATOR_1: "contabil_fator_1",
+  CONTABIL_FATOR_2: "contabil_fator_2",
 };
+
+// Status/regimes usados no filtro "empresas ativas e suspensas, exceto MEI e Domésticas"
+const CONTABIL_STATUS_ELEGIVEL = ["ATIVA", "SUSPENSA"];
+const CONTABIL_REGIMES_EXCLUIDOS = ["MEI", "Doméstica"];
 
 module.exports = class BonusController {
   /**
@@ -109,7 +114,8 @@ module.exports = class BonusController {
         [FACTOR_KEYS.DP_FATOR_1]: "0.00",
         [FACTOR_KEYS.DP_FATOR_2]: "0.00",
         [FACTOR_KEYS.FISCAL_VALOR_BASE_C]: "0.00",
-        [FACTOR_KEYS.CONTABIL_VALOR_MES]: "0.00",
+        [FACTOR_KEYS.CONTABIL_FATOR_1]: "0.00",
+        [FACTOR_KEYS.CONTABIL_FATOR_2]: "0.00",
       };
       factors.forEach((f) => {
         factorsMap[f.factorKey] = f.factorValue;
@@ -125,8 +131,13 @@ module.exports = class BonusController {
    * Atualiza os valores dos fatores de bônus no banco.
    */
   static async updateBonusFactors(req, res) {
-    const { dp_fator_1, dp_fator_2, fiscal_valor_base_c, contabil_valor_mes } =
-      req.body;
+    const {
+      dp_fator_1,
+      dp_fator_2,
+      fiscal_valor_base_c,
+      contabil_fator_1,
+      contabil_fator_2,
+    } = req.body;
     try {
       const factorsToUpdate = [
         { factorKey: FACTOR_KEYS.DP_FATOR_1, factorValue: dp_fator_1 },
@@ -136,8 +147,12 @@ module.exports = class BonusController {
           factorValue: fiscal_valor_base_c,
         },
         {
-          factorKey: FACTOR_KEYS.CONTABIL_VALOR_MES,
-          factorValue: contabil_valor_mes,
+          factorKey: FACTOR_KEYS.CONTABIL_FATOR_1,
+          factorValue: contabil_fator_1,
+        },
+        {
+          factorKey: FACTOR_KEYS.CONTABIL_FATOR_2,
+          factorValue: contabil_fator_2,
         },
       ];
 
@@ -197,8 +212,8 @@ module.exports = class BonusController {
       const FATOR2_DP = factorsMap[FACTOR_KEYS.DP_FATOR_2] || 0;
       const VALOR_BASE_C_FISCAL =
         factorsMap[FACTOR_KEYS.FISCAL_VALOR_BASE_C] || 0;
-      const VALOR_MES_CONTABIL =
-        factorsMap[FACTOR_KEYS.CONTABIL_VALOR_MES] || 0;
+      const FATOR1_CONTABIL = factorsMap[FACTOR_KEYS.CONTABIL_FATOR_1] || 0;
+      const FATOR2_CONTABIL = factorsMap[FACTOR_KEYS.CONTABIL_FATOR_2] || 0;
 
       // 3. Busca usuários de DP, Fiscal e Contábil que são elegíveis
       const dpUsersEligible = await User.findAll({
@@ -225,6 +240,7 @@ module.exports = class BonusController {
         });
         const dpCompanyIds = allDpCompanies.map((c) => c.id);
         const completedDpIds = await getCompletedCompanyIds(period, "Pessoal", dpCompanyIds, transaction);
+        const dpCalculationMemory = { fator1: FATOR1_DP, fator2: FATOR2_DP };
 
         for (const user of dpUsersEligible) {
           const companies = allDpCompanies.filter((c) => c.respDpId === user.id && completedDpIds.has(c.id));
@@ -238,7 +254,7 @@ module.exports = class BonusController {
             totalBonus += companyBonus;
             details.push({ companyName: company.name, employeesCount: empCount, bonus: companyBonus });
           }
-          allResults.push({ userId: user.id, userName: user.name, department: "Pessoal", totalBonus, details, calculationDate, period });
+          allResults.push({ userId: user.id, userName: user.name, department: "Pessoal", totalBonus, details, calculationDate, period, calculationMemory: dpCalculationMemory });
         }
       }
 
@@ -259,6 +275,7 @@ module.exports = class BonusController {
         const C = VALOR_BASE_C_FISCAL;
         const D = (B > 0 ? C / B : 0) + C * 0.05;
         const E = A > 0 ? C / A : 0;
+        const fiscalCalculationMemory = { A, B, C, D, E };
 
         for (const user of fiscalUsersEligible) {
           const companies = completedFiscalCompanies.filter((c) => c.respFiscalId === user.id);
@@ -271,31 +288,83 @@ module.exports = class BonusController {
             totalBonus += calculatedBonus;
             details.push({ companyName: company.name, bonusValue: companyBonusValue, bonus: calculatedBonus });
           }
-          allResults.push({ userId: user.id, userName: user.name, department: "Fiscal", totalBonus, details, calculationDate, period });
+          allResults.push({ userId: user.id, userName: user.name, department: "Fiscal", totalBonus, details, calculationDate, period, calculationMemory: fiscalCalculationMemory });
         }
       }
 
       // --- 6. CÁLCULO PARA DEPARTAMENTO CONTÁBIL ---
+      // Fórmula: valorBase = ((( fator1 * U ) / T ) * N) * (N / T) / fator2
+      //   U = usuários do Contábil elegíveis que concluíram >= 1 empresa no mês
+      //   T = total de empresas ATIVA/SUSPENSA cadastradas no sistema, exceto MEI e Doméstica
+      //   N = empresas do Contábil concluídas no mês com nota (nível de dificuldade) definida
+      // Por empresa: bonus = valorBase * nota (nível de dificuldade da empresa, 1 a 5)
+      // Total do usuário = soma do bonus de todas as suas empresas concluídas com nota.
       if (contabilUsersEligible.length > 0) {
+        const contabilUserIds = contabilUsersEligible.map((u) => u.id);
         const allContabilCompanies = await Company.findAll({
-          where: { respContabilId: { [Op.in]: contabilUsersEligible.map((u) => u.id) }, status: "ATIVA", isArchived: false },
+          where: { respContabilId: { [Op.in]: contabilUserIds }, status: "ATIVA", isArchived: false },
           transaction,
         });
         const contabilCompanyIds = allContabilCompanies.map((c) => c.id);
         const completedContabilIds = await getCompletedCompanyIds(period, "Contábil", contabilCompanyIds, transaction);
 
+        // Empresas concluídas no período E com nota definida (critério de N e de elegibilidade ao bônus)
+        const completedContabilCompanies = allContabilCompanies.filter(
+          (c) => completedContabilIds.has(c.id) && c.contabilNota != null
+        );
+
+        // T: total de empresas ativas e suspensas cadastradas no sistema, exceto MEI e Domésticas
+        const totalEmpresasElegiveis =
+          (await Company.count({
+            where: {
+              status: { [Op.in]: CONTABIL_STATUS_ELEGIVEL },
+              rule: { [Op.notIn]: CONTABIL_REGIMES_EXCLUIDOS },
+              isArchived: false,
+            },
+            transaction,
+          })) || 1;
+
+        // U: usuários elegíveis que concluíram ao menos 1 empresa no mês
+        const usuariosAtivos =
+          contabilUsersEligible.filter((user) =>
+            allContabilCompanies.some(
+              (c) => c.respContabilId === user.id && completedContabilIds.has(c.id)
+            )
+          ).length || 1;
+
+        // N: empresas concluídas no mês com nota definida
+        const empresasConcluidasComNota = completedContabilCompanies.length;
+
+        const T = totalEmpresasElegiveis;
+        const U = usuariosAtivos;
+        const N = empresasConcluidasComNota;
+
+        const valorBase =
+          FATOR2_CONTABIL !== 0
+            ? ((((FATOR1_CONTABIL * U) / T) * N) * (N / T)) / FATOR2_CONTABIL
+            : 0;
+
+        const contabilCalculationMemory = {
+          fator1: FATOR1_CONTABIL,
+          fator2: FATOR2_CONTABIL,
+          totalEmpresasElegiveis: T,
+          usuariosAtivos: U,
+          empresasConcluidasComNota: N,
+          valorBase,
+        };
+
         for (const user of contabilUsersEligible) {
-          const companies = allContabilCompanies.filter((c) => c.respContabilId === user.id && completedContabilIds.has(c.id));
+          const companies = completedContabilCompanies.filter((c) => c.respContabilId === user.id);
           let totalBonus = 0;
           const details = [];
 
           for (const company of companies) {
-            const monthsCount = company.accountingMonthsCount || 0;
-            const companyBonus = monthsCount * VALOR_MES_CONTABIL;
+            const nota = company.contabilNota;
+            const companyBonus = valorBase * nota;
             totalBonus += companyBonus;
-            details.push({ companyName: company.name, accountingMonthsCount: monthsCount, bonus: companyBonus });
+            details.push({ companyName: company.name, contabilNota: nota, bonus: companyBonus });
           }
-          allResults.push({ userId: user.id, userName: user.name, department: "Contábil", totalBonus, details, calculationDate, period });
+          allResults.push({ userId: user.id, userName: user.name, department: "Contábil", totalBonus, details, calculationDate, period, calculationMemory: contabilCalculationMemory });
         }
       }
 

@@ -72,7 +72,7 @@ const COMPANY_ATTRIBUTES = [
   "employeesCount",
   "isHeadquarters",
   "grupoId",
-  "accountingMonthsCount",
+  "contabilNota",
   "isZeroedFiscal",
   "sentToClientFiscal",
   "isZeroedDp",
@@ -272,7 +272,7 @@ module.exports = class CompanyController {
         isZeroedDp: false,
         bonusValue: null,
         employeesCount: null,
-        accountingMonthsCount: null,
+        contabilNota: null,
       });
 
       await StatusHistory.create({
@@ -669,10 +669,26 @@ module.exports = class CompanyController {
 
         // Bonus field (todos os departamentos)
         if (config.bonusField && config.bonusField in agentData) {
-          updatePayload[config.bonusField] =
-            agentData[config.bonusField] === ""
-              ? null
-              : parseInt(agentData[config.bonusField], 10);
+          const rawValue = agentData[config.bonusField];
+          if (rawValue === "" || rawValue === null) {
+            updatePayload[config.bonusField] = null;
+          } else {
+            const parsedValue = parseInt(rawValue, 10);
+            const belowMin =
+              config.bonusFieldMin != null && parsedValue < config.bonusFieldMin;
+            const aboveMax =
+              config.bonusFieldMax != null && parsedValue > config.bonusFieldMax;
+            if (isNaN(parsedValue) || belowMin || aboveMax) {
+              return res.status(400).json({
+                message: `Valor inválido para ${config.bonusField}${
+                  config.bonusFieldMin != null
+                    ? ` (deve ser de ${config.bonusFieldMin} a ${config.bonusFieldMax})`
+                    : ""
+                }.`,
+              });
+            }
+            updatePayload[config.bonusField] = parsedValue;
+          }
         }
 
         // isZeroed (todos os departamentos com obligationsEnabled)
@@ -1113,7 +1129,7 @@ module.exports = class CompanyController {
           usersDataMap.set(cu.id, {
             id: cu.id,
             name: cu.name,
-            totalAccountingMonths: 0,
+            totalNota: 0,
             totalCompaniesAssigned: 0,
           });
         });
@@ -1124,7 +1140,7 @@ module.exports = class CompanyController {
             isArchived: false,
             respContabilId: { [Op.in]: contabilUsers.map((u) => u.id) },
           },
-          attributes: ["respContabilId", "accountingMonthsCount"],
+          attributes: ["respContabilId", "contabilNota"],
           raw: true,
         });
 
@@ -1132,8 +1148,7 @@ module.exports = class CompanyController {
           const responsibleUser = usersDataMap.get(company.respContabilId);
           if (responsibleUser) {
             responsibleUser.totalCompaniesAssigned++;
-            responsibleUser.totalAccountingMonths +=
-              company.accountingMonthsCount || 0;
+            responsibleUser.totalNota += company.contabilNota || 0;
           }
         }
 

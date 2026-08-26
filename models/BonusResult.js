@@ -25,6 +25,10 @@ const BonusResult = db.define("BonusResult", {
     type: DataTypes.JSON,
     allowNull: true, // Detalhes podem ser nulos se não houver empresas
   },
+  calculationMemory: {
+    type: DataTypes.JSON,
+    allowNull: true, // Fatores/agregados globais usados no cálculo do departamento nesta competência
+  },
   calculationDate: {
     type: DataTypes.DATE,
     allowNull: false,

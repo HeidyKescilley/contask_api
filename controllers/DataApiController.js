@@ -63,7 +63,7 @@ function dateRange(where, field, from, to) {
 function paginate(q) {
   const allowedCompanyFields = [
     "id", "num", "name", "cnpj", "rule", "classi", "status", "uf",
-    "bonusValue", "employeesCount", "accountingMonthsCount",
+    "bonusValue", "employeesCount", "contabilNota",
     "createdAt", "updatedAt", "statusUpdatedAt",
   ];
   const allowedUserFields = ["id", "name", "email", "department", "role", "createdAt"];
@@ -121,7 +121,7 @@ module.exports = class DataApiController {
     // --- Faixas numéricas ---
     range(where, "bonusValue", q.bonusValue_min, q.bonusValue_max);
     range(where, "employeesCount", q.employeesCount_min, q.employeesCount_max);
-    range(where, "accountingMonthsCount", q.accountingMonthsCount_min, q.accountingMonthsCount_max);
+    range(where, "contabilNota", q.contabilNota_min, q.contabilNota_max);
 
     // --- Faixas de data ---
     dateRange(where, "createdAt", q.createdAt_from, q.createdAt_to);

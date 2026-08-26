@@ -23,7 +23,9 @@ const DEPARTMENT_CONFIG = {
     responsibleAlias: "respContabil",
     isZeroed: "isZeroedContabil",
     completedAt: "contabilCompletedAt",
-    bonusField: "accountingMonthsCount",
+    bonusField: "contabilNota",
+    bonusFieldMin: 1,
+    bonusFieldMax: 5,
     obligationsEnabled: true,
   },
 };

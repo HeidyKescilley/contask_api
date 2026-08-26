@@ -97,7 +97,7 @@ A resposta sempre inclui `{ total, limit, offset, data: [...] }`.
 #### Faixas numéricas
 `bonusValue_min` / `bonusValue_max`,
 `employeesCount_min` / `employeesCount_max`,
-`accountingMonthsCount_min` / `accountingMonthsCount_max`
+`contabilNota_min` / `contabilNota_max`
 
 #### Faixas de data
 `createdAt_from` / `createdAt_to`,
