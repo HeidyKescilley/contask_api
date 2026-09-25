@@ -447,7 +447,7 @@ module.exports = class TaxController {
           CompanyTax.findAll({ where, order: [["name", "ASC"]] }),
           Company.findAll({
             where: { isArchived: false, status: "ATIVA" },
-            attributes: ["id", "respFiscalId", "respDpId", "respContabilId", "isZeroedFiscal", "isZeroedDp", "rule", "classi", "uf"],
+            attributes: ["id", "respFiscalId", "respDpId", "respContabilId", "isZeroedFiscal", "isZeroedDp", "isZeroedContabil", "rule", "classi", "uf"],
             raw: true,
           }),
           deptCfg
@@ -531,8 +531,10 @@ module.exports = class TaxController {
             }
           }
 
+          // Empresa zerada sem itens pendentes conta como concluída, mesmo com tudo desabilitado
           const respId = deptCfg ? company[deptCfg.responsibleField] : null;
-          if (companyActive > 0 && respId && userStats[respId]) {
+          const zeroedForDept = deptCfg?.isZeroed ? !!company[deptCfg.isZeroed] : false;
+          if ((companyActive > 0 || zeroedForDept) && respId && userStats[respId]) {
             const u = userStats[respId];
             u.totalCompanies++;
             if (companyPending === 0) u.completedCompanies++;

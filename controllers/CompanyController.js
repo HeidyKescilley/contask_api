@@ -802,6 +802,33 @@ module.exports = class CompanyController {
     }
   }
 
+  // PATCH /company/clear-contabil-notas — zera "Nota Cont." de todas as empresas do usuário Contábil
+  static async clearContabilNotas(req, res) {
+    const user = req.user;
+    try {
+      if (user.department !== "Contábil") {
+        return res.status(403).json({ message: "Apenas usuários do departamento Contábil podem zerar as notas." });
+      }
+
+      const [cleared] = await Company.update(
+        { contabilNota: null },
+        { where: { respContabilId: user.id, contabilNota: { [Op.ne]: null } } }
+      );
+
+      logger.info(`Usuário (${user.email}) zerou a Nota Cont. de ${cleared} empresa(s).`);
+
+      cacheManager.invalidate(["my_companies_" + user.id]);
+      cacheManager.invalidateByPrefix("dashboard_my_companies_");
+      registerMyCompaniesCache(user);
+      await cacheManager.reloadMyCompanies(user.id);
+
+      return res.status(200).json({ message: "Notas zeradas com sucesso.", cleared });
+    } catch (error) {
+      logger.error(`Erro ao zerar Nota Cont. (usuário ${user.id}): ${error.message}`, { stack: error.stack });
+      return res.status(500).json({ message: "Erro ao zerar as notas." });
+    }
+  }
+
   // ==================== DASHBOARDS ====================
 
   // Método privado unificado — Dashboard General (Fiscal e Pessoal)

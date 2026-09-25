@@ -62,6 +62,13 @@ router.patch(
   CompanyController.updateAgentData
 );
 
+router.patch(
+  "/clear-contabil-notas",
+  verifyToken,
+  activityLogger,
+  CompanyController.clearContabilNotas
+);
+
 // Rotas para Notas por Período
 router.get("/period-notes", verifyToken, CompanyController.getPeriodNotesBulk);
 router.get("/period-note/:id", verifyToken, CompanyController.getPeriodNote);

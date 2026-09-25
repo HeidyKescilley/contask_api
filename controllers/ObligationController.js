@@ -729,6 +729,7 @@ module.exports = class ObligationController {
       // Mapa de campo responsável por departamento
       const respFieldMap = { Fiscal: "respFiscalId", Pessoal: "respDpId", "Contábil": "respContabilId" };
       const respField = respFieldMap[department] || "respFiscalId";
+      const deptCfg = getDeptConfig(department);
 
       const cacheKey = `obl_dashboard_${department}_${periodParam || "current"}`;
       const cachedData = await cacheManager.getOrFetch(cacheKey, async () => {
@@ -843,7 +844,8 @@ module.exports = class ObligationController {
               else if (status === "disabled" || status === "not_applicable") stats.disabled++;
               else stats.pending++;
 
-              if (status !== "disabled" && status !== "not_applicable") {
+              // "Não se aplica" conta como atividade resolvida (só "disabled" sai da conta)
+              if (status !== "disabled") {
                 companyActive++;
                 if (status === "pending") companyPending++;
               }
@@ -852,7 +854,9 @@ module.exports = class ObligationController {
 
           // Atribui ao responsável do departamento
           const userId = company[respField];
-          if (companyActive > 0 && userId && userStats[userId]) {
+          // Empresa zerada sem itens pendentes conta como concluída, mesmo com tudo desabilitado
+          const zeroedForDept = deptCfg?.isZeroed ? !!company[deptCfg.isZeroed] : false;
+          if ((companyActive > 0 || zeroedForDept) && userId && userStats[userId]) {
             const u = userStats[userId];
             u.totalCompanies++;
             if (companyPending === 0) u.completedCompanies++;
