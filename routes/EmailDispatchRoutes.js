@@ -45,7 +45,9 @@ router.patch("/:id", verifyToken, upload.single("signatureImage"), activityLogge
 router.delete("/:id", verifyToken, activityLogger, EmailDispatchController.remove);
 router.patch("/:id/companies", verifyToken, activityLogger, EmailDispatchController.setCompanies);
 router.post("/:id/approve", verifyToken, verifyAdmin, activityLogger, EmailDispatchController.approve);
-router.post("/:id/run", verifyToken, activityLogger, EmailDispatchController.runNow);
+router.post("/:id/archive", verifyToken, activityLogger, EmailDispatchController.archive);
+router.post("/:id/unarchive", verifyToken, activityLogger, EmailDispatchController.unarchive);
+router.post("/:id/run",verifyToken, activityLogger, EmailDispatchController.runNow);
 router.get("/:id/runs", verifyToken, activityLogger, EmailDispatchController.listRuns);
 
 module.exports = router;

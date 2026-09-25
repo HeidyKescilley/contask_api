@@ -35,7 +35,7 @@ const EmailDispatchRun = db.define(
       allowNull: true,
     },
     status: {
-      type: DataTypes.ENUM("running", "completed", "completed_with_errors", "failed"),
+      type: DataTypes.ENUM("running", "completed", "completed_with_errors", "failed", "cancelled"),
       allowNull: false,
       defaultValue: "running",
     },

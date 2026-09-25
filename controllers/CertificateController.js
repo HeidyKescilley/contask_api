@@ -2,6 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const { Op } = require("sequelize");
+const archiver = require("archiver");
 const Certificate = require("../models/Certificate");
 const Company = require("../models/Company");
 const cleanCNPJ = require("../helpers/clean-cnpj");
@@ -223,18 +224,46 @@ module.exports = class CertificateController {
         include: [{ model: Company, as: "company", attributes: ["id", "name"] }],
       });
 
-      const data = certificates
-        .filter((c) => c.company)
-        .map((c) => ({
-          razaoSocial: c.company.name,
-          cnpj: c.cnpj,
-          senha: c.password,
-        }));
-
+      const includeFiles = req.query.includeFiles === "true";
       const dataStr = new Date().toISOString().slice(0, 10);
+
+      const valid = certificates.filter((c) => c.company);
+      const filesToZip = [];
+      const data = valid.map((c) => {
+        const item = { razaoSocial: c.company.name, cnpj: c.cnpj, senha: c.password };
+        if (includeFiles) {
+          const filePath = path.join(CERTIFICATES_DIR, c.fileName);
+          if (fs.existsSync(filePath)) {
+            item.arquivo = `arquivos/${c.fileName}`;
+            filesToZip.push({ filePath, name: item.arquivo });
+          } else {
+            item.arquivo = null;
+            logger.error(`Exportação: arquivo de certificado ausente em disco: ${filePath}`);
+          }
+        }
+        return item;
+      });
+
       logger.info(
-        `Usuário (${req.user.email}) exportou ${data.length} certificado(s) válido(s) em JSON.`
+        `Usuário (${req.user.email}) exportou ${data.length} certificado(s) válido(s)${
+          includeFiles ? ` com ${filesToZip.length} arquivo(s) (ZIP)` : " em JSON"
+        }.`
       );
+
+      if (includeFiles) {
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="certificados_validos_${dataStr}.zip"`);
+        const archive = archiver("zip", { zlib: { level: 6 } });
+        archive.on("error", (err) => {
+          logger.error(`CertificateController.exportValidCertificates (zip): ${err.message}`);
+          res.destroy(err);
+        });
+        archive.pipe(res);
+        archive.append(JSON.stringify(data, null, 2), { name: `certificados_validos_${dataStr}.json` });
+        for (const f of filesToZip) archive.file(f.filePath, { name: f.name });
+        await archive.finalize();
+        return;
+      }
 
       res.setHeader("Content-Type", "application/json");
       res.setHeader(

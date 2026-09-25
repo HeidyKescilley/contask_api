@@ -27,8 +27,15 @@ const EmailDispatchRunRecipient = db.define(
       comment: "Snapshot do(s) e-mail(s) usados no momento do envio",
     },
     status: {
-      type: DataTypes.ENUM("sent", "failed"),
+      type: DataTypes.ENUM("pending", "sending", "sent", "failed", "cancelled"),
       allowNull: false,
+      defaultValue: "pending",
+      comment: "pending = na fila; sending = reservado por um worker; demais = resultado final",
+    },
+    attemptedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Momento da tentativa de envio SMTP (sucesso ou falha) — base do limite por hora",
     },
     smtpResponse: {
       type: DataTypes.TEXT,
@@ -74,6 +81,8 @@ const EmailDispatchRunRecipient = db.define(
     indexes: [
       { fields: ["runId"] },
       { fields: ["companyId"] },
+      { fields: ["status"] },
+      { fields: ["attemptedAt"] },
       { unique: true, fields: ["trackingToken"] },
     ],
   }

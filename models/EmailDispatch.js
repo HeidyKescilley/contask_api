@@ -97,6 +97,16 @@ const EmailDispatch = db.define(
       defaultValue: false,
       comment: "Precisa ser aprovada por um admin antes de rodar (manual ou automaticamente). Reseta a cada criação/edição.",
     },
+    isArchived: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Arquivada: nunca roda (manual ou automático), mas mantém o registro e o histórico de envios.",
+    },
+    archivedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     approvedById: {
       type: DataTypes.INTEGER,
       allowNull: true,

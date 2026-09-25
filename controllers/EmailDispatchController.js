@@ -9,7 +9,7 @@ const Company = require("../models/Company");
 const User = require("../models/User");
 const { encrypt } = require("../helpers/crypto");
 const { computeNextRun } = require("../utils/nextRun");
-const { executeDispatch } = require("../services/emailDispatchSender");
+const { enqueueDispatch, cancelPendingForDispatch } = require("../services/emailDispatchSender");
 const logger = require("../logger/logger");
 
 // Pixel PNG 1x1 transparente, servido pelo endpoint de rastreio de abertura
@@ -306,14 +306,58 @@ module.exports = class EmailDispatchController {
         });
       }
 
-      executeDispatch(dispatch.id, { triggerType: "manual", triggeredById: req.user.id }).catch((err) => {
-        logger.error(`[EmailDispatch] Erro ao rodar manualmente a automação ${dispatch.id}: ${err.message}`);
-      });
+      if (dispatch.isArchived) {
+        return res.status(400).json({ message: "Automação arquivada não pode ser executada. Desarquive-a primeiro." });
+      }
 
-      logger.info(`[EmailDispatch] Execução manual da automação "${dispatch.name}" (id ${dispatch.id}) disparada por ${req.user.email}.`);
-      return res.status(202).json({ message: "Execução iniciada. Acompanhe o andamento no histórico desta automação." });
+      try {
+        await enqueueDispatch(dispatch.id, { triggerType: "manual", triggeredById: req.user.id });
+      } catch (err) {
+        if (err.code === "ALREADY_RUNNING") return res.status(409).json({ message: err.message });
+        if (err.code === "ARCHIVED") return res.status(400).json({ message: err.message });
+        throw err;
+      }
+
+      logger.info(`[EmailDispatch] Execução manual da automação "${dispatch.name}" (id ${dispatch.id}) enfileirada por ${req.user.email}.`);
+      return res.status(202).json({
+        message: "Envio enfileirado. Os e-mails saem em lotes, respeitando o limite por hora; acompanhe o andamento no histórico desta automação.",
+      });
     } catch (error) {
       logger.error(`[EmailDispatch] Erro ao iniciar execução manual ${req.params.id}: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async archive(req, res) {
+    try {
+      const dispatch = await EmailDispatch.findByPk(req.params.id);
+      if (!dispatch) return res.status(404).json({ message: "Automação não encontrada." });
+
+      await dispatch.update({ isArchived: true, archivedAt: new Date() });
+      await cancelPendingForDispatch(dispatch.id);
+
+      logger.info(`[EmailDispatch] Automação "${dispatch.name}" (id ${dispatch.id}) arquivada por ${req.user.email}.`);
+      return res.status(200).json(serializeDispatch(dispatch));
+    } catch (error) {
+      logger.error(`[EmailDispatch] Erro ao arquivar automação ${req.params.id}: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  static async unarchive(req, res) {
+    try {
+      const dispatch = await EmailDispatch.findByPk(req.params.id);
+      if (!dispatch) return res.status(404).json({ message: "Automação não encontrada." });
+
+      const updates = { isArchived: false, archivedAt: null };
+      // Recalcula a próxima execução: o nextRunAt guardado pode estar no passado e dispararia um envio na hora
+      if (dispatch.mode === "automatic") updates.nextRunAt = computeNextRun(dispatch, new Date());
+      await dispatch.update(updates);
+
+      logger.info(`[EmailDispatch] Automação "${dispatch.name}" (id ${dispatch.id}) desarquivada por ${req.user.email}.`);
+      return res.status(200).json(serializeDispatch(dispatch));
+    } catch (error) {
+      logger.error(`[EmailDispatch] Erro ao desarquivar automação ${req.params.id}: ${error.message}`);
       return res.status(500).json({ message: error.message });
     }
   }

@@ -2,6 +2,7 @@
 const cron = require("node-cron");
 const Certificate = require("../models/Certificate");
 const Company = require("../models/Company");
+const User = require("../models/User");
 const { sendToRecipients } = require("../utils/emailSender");
 const {
   certificateExpiring15DaysTemplate,
@@ -23,7 +24,14 @@ const checkCertificateReminders = async () => {
   try {
     const certificates = await Certificate.findAll({
       where: {},
-      include: [{ model: Company, as: "company", attributes: ["id", "name", "cnpj", "email"] }],
+      include: [
+        {
+          model: Company,
+          as: "company",
+          attributes: ["id", "name", "cnpj", "email"],
+          include: [{ model: User, as: "respFiscal", attributes: ["id", "name", "email"], required: false }],
+        },
+      ],
     });
 
     let sent15 = 0;
@@ -35,6 +43,8 @@ const checkCertificateReminders = async () => {
       try {
         const dias = diasRestantes(certificate.validUntil);
         const { company } = certificate;
+        // Cópia para o responsável fiscal da empresa, se houver e-mail cadastrado
+        const cc = company.respFiscal?.email || null;
 
         if (dias <= 15 && !certificate.reminder15Sent) {
           const html = certificateExpiring15DaysTemplate({
@@ -46,7 +56,8 @@ const checkCertificateReminders = async () => {
           await sendToRecipients(
             company.email,
             `⚠️ Certificado Digital vencendo em ${dias} dia(s) — ${company.name}`,
-            html
+            html,
+            cc
           );
           certificate.reminder15Sent = true;
           await certificate.save();
@@ -66,7 +77,8 @@ const checkCertificateReminders = async () => {
           await sendToRecipients(
             company.email,
             `🚨 Certificado Digital vence amanhã — ${company.name}`,
-            html
+            html,
+            cc
           );
           certificate.reminder1Sent = true;
           await certificate.save();

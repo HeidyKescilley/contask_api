@@ -21,22 +21,31 @@ async function sendToAllUsers(subject, htmlContent) {
   return userEmails.length;
 }
 
-async function sendToRecipients(recipients, subject, htmlContent) {
-  const emails = (
-    Array.isArray(recipients) ? recipients : recipients.split(",")
-  )
+function normalizeEmails(value) {
+  if (!value) return [];
+  return (Array.isArray(value) ? value : String(value).split(","))
     .map((e) => e.trim())
     .filter((e) => e);
+}
+
+// cc é opcional (string "a@x,b@y" ou array). Endereços que já estão em "to" são removidos do cc.
+async function sendToRecipients(recipients, subject, htmlContent, cc = null) {
+  const emails = normalizeEmails(recipients);
   if (emails.length === 0) {
     logger.warn("Nenhum destinatário válido para email.");
     return 0;
   }
-  await transporter.sendMail({
+  const toSet = new Set(emails.map((e) => e.toLowerCase()));
+  const ccEmails = normalizeEmails(cc).filter((e) => !toSet.has(e.toLowerCase()));
+
+  const mailOptions = {
     from: FROM_ADDRESS,
     to: emails.join(","),
     subject,
     html: htmlContent,
-  });
+  };
+  if (ccEmails.length > 0) mailOptions.cc = ccEmails.join(",");
+  await transporter.sendMail(mailOptions);
   return emails.length;
 }
 

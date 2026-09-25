@@ -7,7 +7,6 @@ const activityLogger = require("./middlewares/activityLogger"); // Importa o mid
 require("./scheduler/suspendedCompaniesEmailScheduler");
 require("./scheduler/archiveCompaniesScheduler");
 require("./scheduler/birthdayScheduler");
-require("./scheduler/emailDispatchScheduler");
 require("./scheduler/certificateExpirationScheduler");
 
 const app = express();
@@ -206,6 +205,9 @@ cleanupDuplicateIndexes().then(() =>
           `Servidor rodando em http://${process.env.HOST}:${process.env.PORT}`,
         );
       });
+
+      // Automações de e-mail: só inicia depois do sync (colunas novas precisam existir)
+      require("./scheduler/emailDispatchScheduler").startEmailDispatchScheduler();
 
       // Cron: verificar lembretes de paralisações diariamente às 8h
       const cron = require("node-cron");
