@@ -11,11 +11,10 @@ const User = require("../models/User");
 require("../models/associations");
 
 const PROCESS_DEPARTMENTS = [
-  "Administrativo",
+  "Processual",
   "Fiscal",
   "Pessoal",
   "Contábil",
-  "Processual",
   "Financeiro",
   "Outros",
 ];

@@ -165,38 +165,6 @@ const DEFAULT_TAXES = [
   },
 ];
 
-// Cria os padrões de processo do sistema que ainda não existem (por seedKey)
-async function seedProcessTemplates() {
-  try {
-    const ProcessTemplate = require("./models/ProcessTemplate");
-    const ProcessTemplateStep = require("./models/ProcessTemplateStep");
-    const { PROCESS_TEMPLATES } = require("./seeds/processTemplates");
-    for (const tpl of PROCESS_TEMPLATES) {
-      const exists = await ProcessTemplate.findOne({ where: { seedKey: tpl.seedKey } });
-      if (exists) continue;
-      const created = await ProcessTemplate.create({
-        seedKey: tpl.seedKey,
-        name: tpl.name,
-        description: tpl.description,
-        department: tpl.department,
-      });
-      await ProcessTemplateStep.bulkCreate(
-        tpl.steps.map((s, i) => ({
-          templateId: created.id,
-          position: i + 1,
-          title: s.title,
-          description: s.description,
-          responsible: s.responsible,
-          checklist: s.checklist,
-        })),
-      );
-      logger.info(`Padrão de processo criado: ${tpl.name}`);
-    }
-  } catch (err) {
-    logger.error(`seedProcessTemplates: ${err.message}`);
-  }
-}
-
 // Remove índices duplicados acumulados pelo alter:true (MySQL limite: 64 por tabela)
 async function cleanupDuplicateIndexes() {
   try {
@@ -235,7 +203,7 @@ cleanupDuplicateIndexes().then(() =>
         });
       }
       // Seed dos padrões de processo (Manual de Procedimentos) — não recria os já existentes
-      await seedProcessTemplates();
+      await require("./seeds/seedProcessTemplates")();
       app.listen(process.env.PORT, process.env.HOST, () => {
         logger.info(
           `Servidor rodando em http://${process.env.HOST}:${process.env.PORT}`,
