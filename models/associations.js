@@ -242,3 +242,27 @@ EmailDispatchRunRecipient.belongsTo(EmailDispatchRun, { foreignKey: "runId", as:
 
 Company.hasMany(EmailDispatchRunRecipient, { foreignKey: "companyId", as: "emailDispatchRecipients" });
 EmailDispatchRunRecipient.belongsTo(Company, { foreignKey: "companyId", as: "company" });
+
+// Associações para Acompanhamento de Processos
+const ProcessTemplate = require("./ProcessTemplate");
+const ProcessTemplateStep = require("./ProcessTemplateStep");
+const ProcessInstance = require("./ProcessInstance");
+const ProcessInstanceStep = require("./ProcessInstanceStep");
+const ProcessEvent = require("./ProcessEvent");
+
+ProcessTemplate.hasMany(ProcessTemplateStep, { foreignKey: "templateId", as: "steps", onDelete: "CASCADE" });
+ProcessTemplateStep.belongsTo(ProcessTemplate, { foreignKey: "templateId", as: "template" });
+
+ProcessTemplate.hasMany(ProcessInstance, { foreignKey: "templateId", as: "instances", onDelete: "SET NULL" });
+ProcessInstance.belongsTo(ProcessTemplate, { foreignKey: "templateId", as: "template" });
+
+ProcessInstance.hasMany(ProcessInstanceStep, { foreignKey: "instanceId", as: "steps", onDelete: "CASCADE" });
+ProcessInstanceStep.belongsTo(ProcessInstance, { foreignKey: "instanceId", as: "instance" });
+
+ProcessInstance.hasMany(ProcessEvent, { foreignKey: "instanceId", as: "events", onDelete: "CASCADE" });
+ProcessEvent.belongsTo(ProcessInstance, { foreignKey: "instanceId", as: "instance" });
+
+ProcessInstance.belongsTo(User, { foreignKey: "responsibleUserId", as: "responsibleUser", constraints: false });
+ProcessInstance.belongsTo(User, { foreignKey: "createdById", as: "createdBy", constraints: false });
+ProcessEvent.belongsTo(User, { foreignKey: "userId", as: "user", constraints: false });
+ProcessInstanceStep.belongsTo(User, { foreignKey: "completedById", as: "completedBy", constraints: false });
