@@ -553,6 +553,21 @@ module.exports = class CompanyController {
     }
   }
 
+  // Histórico de status de todas as empresas (usado na exportação)
+  static async getAllStatusHistory(req, res) {
+    try {
+      const history = await StatusHistory.findAll({
+        attributes: ["companyId", "status", "date"],
+        order: [["date", "ASC"]],
+        raw: true,
+      });
+      return res.status(200).json(history);
+    } catch (error) {
+      logger.error(`Erro ao buscar histórico de status geral: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
   // ==================== RECENT DATA ====================
 
   static async getRecentStatusChanges(req, res) {

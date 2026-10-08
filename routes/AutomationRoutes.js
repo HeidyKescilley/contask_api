@@ -17,4 +17,10 @@ router.get(
   AutomationController.getAllAutomations
 );
 
+// Geração de DAR (1317) — executa no servidor
+router.post("/dar/jobs", verifyToken, activityLogger, AutomationController.createDarJob);
+router.get("/dar/jobs/:jobId", verifyToken, AutomationController.getDarJob);
+router.get("/dar/jobs/:jobId/zip", verifyToken, AutomationController.downloadDarZip);
+router.get("/dar/jobs/:jobId/items/:itemId/pdf", verifyToken, AutomationController.downloadDarPdf);
+
 module.exports = router;

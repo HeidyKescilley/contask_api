@@ -24,6 +24,11 @@ router.post(
   CompanyController.changeStatus
 );
 router.get(
+  "/status-history-all/list",
+  verifyToken,
+  CompanyController.getAllStatusHistory
+);
+router.get(
   "/status-history/:id",
   verifyToken,
   activityLogger,
