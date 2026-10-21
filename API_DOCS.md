@@ -106,6 +106,15 @@ A resposta sempre inclui `{ total, limit, offset, data: [...] }`.
 `dpCompletedAt_from` / `dpCompletedAt_to`,
 `contabilCompletedAt_from` / `contabilCompletedAt_to`
 
+#### Certificado digital
+Cada empresa retorna `certificateStatus` (`verde` · `amarelo` · `vermelho` · `cinza`), `certificateValid` (true para verde/amarelo),
+`certificateValidFrom`, `certificateValidUntil` e `certificateDaysLeft`.
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `certificateStatus` | `verde` (válido, >15 dias) · `amarelo` (vence em até 15 dias) · `vermelho` (vencido) · `cinza` (sem certificado). Apelidos: `valido`, `vencendo`, `vencido`, `sem_certificado`. Aceita lista: `verde,amarelo` |
+| `certificateValidUntil_from` / `certificateValidUntil_to` | Faixa de validade (YYYY-MM-DD) |
+
 ### Exemplos
 
 ```bash

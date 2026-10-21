@@ -9,6 +9,7 @@ const CompanyObligationStatus = require("../models/CompanyObligationStatus");
 const AccessoryObligation = require("../models/AccessoryObligation");
 const Grupo = require("../models/Grupo");
 const ContactMode = require("../models/ContactMode");
+const Certificate = require("../models/Certificate");
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,113 @@ function paginate(q) {
   const limit = q.limit ? Math.min(Number(q.limit), 1000) : 500;
   const offset = q.offset ? Number(q.offset) : 0;
   return { order: [[orderBy, order]], limit, offset };
+}
+
+// ─── certificado digital ──────────────────────────────────────────────────────
+// Mesma regra do CompanyController: verde (>15 dias), amarelo (<=15 dias),
+// vermelho (vencido), cinza (sem certificado).
+const CERTIFICATE_ALERT_DAYS = 15;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// Aceita os nomes de cor e apelidos legíveis.
+const CERT_STATUS_ALIASES = {
+  verde: "verde", valido: "verde", "válido": "verde",
+  amarelo: "amarelo", vencendo: "amarelo", a_vencer: "amarelo",
+  vermelho: "vermelho", vencido: "vermelho", expirado: "vermelho",
+  cinza: "cinza", sem_certificado: "cinza", sem: "cinza",
+};
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function certificateDaysLeft(validUntil) {
+  if (!validUntil) return null;
+  const v = new Date(validUntil);
+  v.setHours(0, 0, 0, 0);
+  return Math.ceil((v.getTime() - startOfToday().getTime()) / MS_PER_DAY);
+}
+
+function computeCertificateStatus(validUntil) {
+  const dias = certificateDaysLeft(validUntil);
+  if (dias === null) return "cinza";
+  if (dias < 0) return "vermelho";
+  if (dias <= CERTIFICATE_ALERT_DAYS) return "amarelo";
+  return "verde";
+}
+
+/** Converte ?certificateStatus=verde,amarelo,... em lista de status canônicos. */
+function parseCertStatuses(val) {
+  if (!val) return [];
+  return [...new Set(
+    String(val).split(",")
+      .map((v) => CERT_STATUS_ALIASES[v.trim().toLowerCase()])
+      .filter(Boolean)
+  )];
+}
+
+/** Condição sobre validUntil para um status de cor (null para "cinza"). */
+function certStatusCondition(status) {
+  const today = startOfToday();
+  const yellowEnd = new Date(today.getTime() + (CERTIFICATE_ALERT_DAYS + 1) * MS_PER_DAY);
+  switch (status) {
+    case "vermelho": return { validUntil: { [Op.lt]: today } };
+    case "amarelo": return { validUntil: { [Op.gte]: today, [Op.lt]: yellowEnd } };
+    case "verde": return { validUntil: { [Op.gte]: yellowEnd } };
+    default: return null;
+  }
+}
+
+/** Monta o include do certificado (sem expor senha/arquivo) e o filtro de status. */
+function buildCertificateInclude(q) {
+  const include = {
+    model: Certificate,
+    as: "certificate",
+    attributes: ["id", "validFrom", "validUntil", "certificateRazaoSocial"],
+    required: false,
+  };
+  const andConds = [];
+  const statuses = parseCertStatuses(q.certificateStatus);
+  let topLevel = null;
+
+  if (statuses.length) {
+    const ors = statuses.map(certStatusCondition).filter(Boolean);
+    const wantsNone = statuses.includes("cinza");
+    if (wantsNone) {
+      // Sem certificado = LEFT JOIN sem correspondência.
+      topLevel = { [Op.or]: [{ "$certificate.id$": null }, ...ors.map((c) => ({ "$certificate.validUntil$": c.validUntil }))] };
+    } else {
+      andConds.push({ [Op.or]: ors });
+      include.required = true;
+    }
+  }
+
+  // Faixa livre de validade: ?certificateValidUntil_from / _to (YYYY-MM-DD)
+  if (q.certificateValidUntil_from || q.certificateValidUntil_to) {
+    const r = {};
+    if (q.certificateValidUntil_from) r[Op.gte] = new Date(q.certificateValidUntil_from);
+    if (q.certificateValidUntil_to) r[Op.lte] = new Date(q.certificateValidUntil_to + "T23:59:59");
+    andConds.push({ validUntil: r });
+    include.required = true;
+  }
+
+  if (andConds.length) include.where = { [Op.and]: andConds };
+  return { include, topLevel };
+}
+
+/** Troca o objeto "certificate" por campos planos de status. */
+function attachCertificateStatus(company) {
+  const plain = company.get({ plain: true });
+  const c = plain.certificate;
+  plain.certificateStatus = computeCertificateStatus(c?.validUntil);
+  plain.certificateValid = plain.certificateStatus === "verde" || plain.certificateStatus === "amarelo";
+  plain.certificateValidFrom = c?.validFrom || null;
+  plain.certificateValidUntil = c?.validUntil || null;
+  plain.certificateDaysLeft = certificateDaysLeft(c?.validUntil);
+  delete plain.certificate;
+  return plain;
 }
 
 // ─── GET /api/data/companies ──────────────────────────────────────────────────
@@ -148,6 +256,11 @@ module.exports = class DataApiController {
       contabilInclude.required = true;
     }
 
+    // --- Certificado digital: ?certificateStatus=verde|amarelo|vermelho|cinza (ou
+    //     valido|vencendo|vencido|sem_certificado), aceita lista separada por vírgula ---
+    const { include: certificateInclude, topLevel: certTopLevel } = buildCertificateInclude(q);
+    if (certTopLevel) where[Op.and] = [...(where[Op.and] || []), certTopLevel];
+
     const { order, limit, offset } = paginate(q);
 
     const companies = await Company.findAndCountAll({
@@ -158,6 +271,7 @@ module.exports = class DataApiController {
         contabilInclude,
         { model: Grupo, as: "grupo", attributes: ["id", "name"] },
         { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
+        certificateInclude,
       ],
       order,
       limit,
@@ -169,7 +283,7 @@ module.exports = class DataApiController {
       total: companies.count,
       limit,
       offset,
-      data: companies.rows,
+      data: companies.rows.map(attachCertificateStatus),
     });
   }
 
@@ -195,11 +309,12 @@ module.exports = class DataApiController {
           include: [{ model: AccessoryObligation, as: "obligation", attributes: ["id", "name"] }],
         },
         { model: Automation, as: "automations", attributes: ["id", "name"], through: { attributes: [] } },
+        { model: Certificate, as: "certificate", attributes: ["id", "validFrom", "validUntil", "certificateRazaoSocial"] },
       ],
     });
 
     if (!company) return res.status(404).json({ message: "Empresa não encontrada." });
-    return res.status(200).json(company);
+    return res.status(200).json(attachCertificateStatus(company));
   }
 
   // ─── GET /api/data/users ──────────────────────────────────────────────────
