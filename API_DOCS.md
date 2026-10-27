@@ -1,6 +1,6 @@
 # API de Dados — Documentação Interna
 
-API privada para acesso aos dados do banco, destinada exclusivamente ao desenvolvedor (user ID 1).
+API privada para consulta e alteração em lote de dados do banco, destinada exclusivamente ao desenvolvedor (user ID 1).
 
 | | URL |
 |-|-----|
@@ -141,6 +141,63 @@ curl -H "X-API-Key: <key>" \
 
 ---
 
+## `PATCH /api/data/companies/bulk`
+
+Altera campos de **várias empresas de uma vez**. Escolha as empresas por `filter` (mesmos parâmetros do `GET /companies`), por `cnpjs` (lista, com ou sem pontuação) e/ou `ids`. Quando mais de um critério é informado, todos precisam ser atendidos (AND).
+
+Body (JSON, `Content-Type: application/json`):
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `filter` | objeto | Filtros como no `GET /companies`, ex.: `{ "rule": "Simples", "respFiscalId": 3 }` |
+| `cnpjs` | array | CNPJs exatos, ex.: `["22.854.614/0001-00", "12345678000199"]` |
+| `ids` | array | IDs das empresas |
+| `set` | objeto | **Obrigatório.** Campos a alterar e novos valores. `null` limpa o campo (exceto os obrigatórios) |
+| `dryRun` | boolean | `true` apenas lista as empresas afetadas, sem gravar |
+
+Regras de segurança:
+- É obrigatório informar `filter`, `cnpjs` ou `ids`; não é possível alterar todas as empresas sem critério.
+- Se o critério atingir mais de **1000** empresas, a operação é recusada.
+- Recomenda-se rodar primeiro com `"dryRun": true`.
+
+Campos permitidos em `set`:
+
+| Tipo | Campos |
+|------|--------|
+| Texto | `phone`, `email`*, `contact`, `ie`*, `uf`, `obs`, `important_info`, `branchNumber`, `contractInit`, `rule`*, `classi`* |
+| Inteiro / FK | `respFiscalId`, `respDpId`, `respContabilId`, `contactModeId`, `grupoId`, `bonusValue`, `employeesCount`, `contabilNota` (1–5) |
+| Booleano | `openedByUs`, `isArchived`*, `isHeadquarters`* |
+
+\* não aceita `null`. Não podem ser alterados em lote: `id`, `cnpj`, `name`, `num` e `status` (a mudança de status gera histórico e deve usar a rota própria).
+
+Resposta: `{ dryRun, matched, updated, set, companies: [{ id, name, cnpj }] }`. Erros de validação retornam `400` com `message`.
+
+```bash
+# 1) Simular: trocar o telefone da empresa com este CNPJ
+curl -X PATCH -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://172.19.1.15:8800/api/data/companies/bulk \
+  -d '{"cnpjs":["22854614000100"],"set":{"phone":"(61) 99999-0000"},"dryRun":true}'
+
+# 2) Aplicar (mesmo body, sem dryRun)
+curl -X PATCH -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://172.19.1.15:8800/api/data/companies/bulk \
+  -d '{"cnpjs":["22854614000100"],"set":{"phone":"(61) 99999-0000"}}'
+
+# Passar todas as empresas ativas do Simples do resp. fiscal 3 para o 5
+curl -X PATCH -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://172.19.1.15:8800/api/data/companies/bulk \
+  -d '{"filter":{"rule":"Simples","status":"ATIVA","respFiscalId":3},"set":{"respFiscalId":5}}'
+
+# Filtro parcial por CNPJ (raiz) + vários campos
+curl -X PATCH -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://172.19.1.15:8800/api/data/companies/bulk \
+  -d '{"filter":{"cnpj":"22854614"},"set":{"phone":"(61) 3333-0000","email":"novo@cliente.com"}}'
+```
+
+> Os CNPJs são gravados sem pontuação. Em `cnpjs` a pontuação é ignorada; em `filter.cnpj` a busca é parcial (LIKE), então use apenas dígitos.
+
+---
+
 ## `GET /api/data/companies/:id`
 
 Retorna empresa completa com impostos, obrigações, automações, grupo e modo de contato.
@@ -258,6 +315,7 @@ for u in users["data"]:
 
 | Código | Descrição |
 |--------|-----------|
+| `400` | Body inválido na atualização em lote (sem critério, campo não permitido, valor inválido ou mais de 1000 empresas) |
 | `401` | API Key ausente, inválida ou revogada |
 | `403` | Operação restrita ao user ID 1 |
 | `404` | Recurso não encontrado |

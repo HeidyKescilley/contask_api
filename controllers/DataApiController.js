@@ -10,6 +10,8 @@ const AccessoryObligation = require("../models/AccessoryObligation");
 const Grupo = require("../models/Grupo");
 const ContactMode = require("../models/ContactMode");
 const Certificate = require("../models/Certificate");
+const cacheManager = require("../utils/CacheManager");
+const logger = require("../logger/logger");
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -184,11 +186,9 @@ function attachCertificateStatus(company) {
   return plain;
 }
 
-// ─── GET /api/data/companies ──────────────────────────────────────────────────
-module.exports = class DataApiController {
-  static async getCompanies(req, res) {
-    const q = req.query;
-    const where = {};
+/** Monta where + includes de empresas a partir dos filtros (query string ou body.filter). */
+function buildCompanyQuery(q) {
+  const where = {};
 
     // --- Campos exatos (ID / FK / enums) ---
     exactInt(where, "id", q.id);
@@ -261,18 +261,71 @@ module.exports = class DataApiController {
     const { include: certificateInclude, topLevel: certTopLevel } = buildCertificateInclude(q);
     if (certTopLevel) where[Op.and] = [...(where[Op.and] || []), certTopLevel];
 
+  return {
+    where,
+    include: [
+      fiscalInclude,
+      dpInclude,
+      contabilInclude,
+      { model: Grupo, as: "grupo", attributes: ["id", "name"] },
+      { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
+      certificateInclude,
+    ],
+  };
+}
+
+// ─── PATCH /api/data/companies/bulk ───────────────────────────────────────────
+// Campos que podem ser alterados em lote (cnpj, name, num e status ficam de fora:
+// status gera histórico e os demais identificam a empresa).
+const BULK_TYPES = {
+  contractInit: "string", contact: "string", email: "string", phone: "string",
+  ie: "string", uf: "string", obs: "string", important_info: "string",
+  branchNumber: "string", rule: "string", classi: "string",
+  respFiscalId: "int", respDpId: "int", respContabilId: "int",
+  contactModeId: "int", grupoId: "int",
+  bonusValue: "int", employeesCount: "int", contabilNota: "int",
+  openedByUs: "bool", isArchived: "bool", isHeadquarters: "bool",
+};
+const BULK_NOT_NULL = new Set(["email", "ie", "rule", "classi", "isArchived", "isHeadquarters"]);
+const BULK_MAX = 1000;
+
+/** Valida/normaliza body.set. Retorna { values } ou { error }. */
+function parseBulkSet(set) {
+  if (!set || typeof set !== "object" || Array.isArray(set) || !Object.keys(set).length) {
+    return { error: "Informe 'set' com ao menos um campo a alterar." };
+  }
+  const values = {};
+  for (const [field, raw] of Object.entries(set)) {
+    const type = BULK_TYPES[field];
+    if (!type) return { error: `Campo '${field}' não pode ser alterado em lote.` };
+    if (raw === null) {
+      if (BULK_NOT_NULL.has(field)) return { error: `Campo '${field}' não aceita null.` };
+      values[field] = null;
+    } else if (type === "int") {
+      const n = Number(raw);
+      if (raw === "" || !Number.isInteger(n)) return { error: `Campo '${field}' deve ser inteiro.` };
+      values[field] = n;
+    } else if (type === "bool") {
+      const b = typeof raw === "boolean" ? raw : parseBool(String(raw));
+      if (b === undefined) return { error: `Campo '${field}' deve ser booleano.` };
+      values[field] = b;
+    } else {
+      values[field] = String(raw);
+    }
+  }
+  return { values };
+}
+
+// ─── GET /api/data/companies ──────────────────────────────────────────────────
+module.exports = class DataApiController {
+  static async getCompanies(req, res) {
+    const q = req.query;
+    const { where, include } = buildCompanyQuery(q);
     const { order, limit, offset } = paginate(q);
 
     const companies = await Company.findAndCountAll({
       where,
-      include: [
-        fiscalInclude,
-        dpInclude,
-        contabilInclude,
-        { model: Grupo, as: "grupo", attributes: ["id", "name"] },
-        { model: ContactMode, as: "contactMode", attributes: ["id", "name"] },
-        certificateInclude,
-      ],
+      include,
       order,
       limit,
       offset,
@@ -285,6 +338,78 @@ module.exports = class DataApiController {
       offset,
       data: companies.rows.map(attachCertificateStatus),
     });
+  }
+
+  // ─── PATCH /api/data/companies/bulk ───────────────────────────────────────
+  // Body: { filter?, cnpjs?, ids?, set, dryRun? }
+  //  - filter: mesmos parâmetros do GET /companies (ex.: { "rule": "Simples" })
+  //  - cnpjs / ids: listas explícitas (CNPJ com ou sem pontuação)
+  //  - set: campos a alterar (ver BULK_TYPES)
+  //  - dryRun: true só lista o que seria alterado
+  static async bulkUpdateCompanies(req, res) {
+    const { filter, cnpjs, ids, set, dryRun } = req.body || {};
+
+    const parsed = parseBulkSet(set);
+    if (parsed.error) return res.status(400).json({ message: parsed.error });
+
+    const hasFilter = filter && typeof filter === "object" && Object.keys(filter).length > 0;
+    const hasCnpjs = Array.isArray(cnpjs) && cnpjs.length > 0;
+    const hasIds = Array.isArray(ids) && ids.length > 0;
+    if (!hasFilter && !hasCnpjs && !hasIds) {
+      return res.status(400).json({
+        message: "Informe ao menos um critério: 'filter', 'cnpjs' ou 'ids' (atualizar todas as empresas não é permitido).",
+      });
+    }
+
+    // Filtros chegam do body como JSON; normaliza para string como na query string.
+    const q = {};
+    if (hasFilter) for (const [k, v] of Object.entries(filter)) q[k] = v === null ? "null" : String(v);
+    const { where, include } = buildCompanyQuery(q);
+
+    const and = [];
+    if (hasCnpjs) and.push({ cnpj: { [Op.in]: cnpjs.map((c) => String(c).replace(/\D/g, "")) } });
+    if (hasIds) and.push({ id: { [Op.in]: ids.map(Number).filter(Number.isInteger) } });
+    if (and.length) where[Op.and] = [...(where[Op.and] || []), ...and];
+
+    const matched = await Company.findAll({
+      where,
+      include,
+      attributes: ["id", "name", "cnpj"],
+      limit: BULK_MAX + 1,
+      subQuery: false,
+    });
+    const unique = [...new Map(matched.map((c) => [c.id, c])).values()];
+
+    if (unique.length > BULK_MAX) {
+      return res.status(400).json({
+        message: `O filtro atinge mais de ${BULK_MAX} empresas. Refine o filtro e tente novamente.`,
+      });
+    }
+
+    const summary = unique.map((c) => ({ id: c.id, name: c.name, cnpj: c.cnpj }));
+    if (dryRun === true || dryRun === "true") {
+      return res.status(200).json({ dryRun: true, matched: summary.length, set: parsed.values, companies: summary });
+    }
+    if (!summary.length) {
+      return res.status(200).json({ dryRun: false, matched: 0, updated: 0, set: parsed.values, companies: [] });
+    }
+
+    try {
+      const [updated] = await Company.update(parsed.values, {
+        where: { id: { [Op.in]: summary.map((c) => c.id) } },
+      });
+
+      await cacheManager.reloadAllGlobal();
+      cacheManager.invalidateByPrefix("my_companies_");
+      cacheManager.invalidateByPrefix("dashboard_general_");
+      cacheManager.invalidateByPrefix("dashboard_my_companies_");
+
+      logger.info(`API Data: atualização em lote de ${summary.length} empresa(s) (user ${req.apiUserId}): ${JSON.stringify(parsed.values)}`);
+      return res.status(200).json({ dryRun: false, matched: summary.length, updated, set: parsed.values, companies: summary });
+    } catch (error) {
+      logger.error(`Erro na atualização em lote de empresas: ${error.message}`);
+      return res.status(400).json({ message: error.message });
+    }
   }
 
   // ─── GET /api/data/companies/:id ─────────────────────────────────────────
