@@ -4,6 +4,7 @@ const router = require("express").Router();
 const CompanyController = require("../controllers/CompanyController");
 const ContactModeController = require("../controllers/ContactModeController");
 const GrupoController = require("../controllers/GrupoController");
+const CompanyPhoneController = require("../controllers/CompanyPhoneController");
 
 // Middleware
 const verifyToken = require("../helpers/verify-token");
@@ -107,6 +108,13 @@ router.get(
   activityLogger,
   CompanyController.getPeriodCompletion
 );
+
+// Telefones da empresa (cada telefone tem o nome do contato associado)
+router.get("/:id/phones", verifyToken, CompanyPhoneController.list);
+router.post("/:id/phones", verifyToken, activityLogger, CompanyPhoneController.add);
+router.put("/:id/phones", verifyToken, activityLogger, CompanyPhoneController.replace);
+router.patch("/:id/phones/:phoneId", verifyToken, activityLogger, CompanyPhoneController.update);
+router.delete("/:id/phones/:phoneId", verifyToken, activityLogger, CompanyPhoneController.remove);
 
 // Rota parametrizada deve ser a última
 router.get("/:id", verifyToken, activityLogger, CompanyController.getOne);

@@ -198,6 +198,46 @@ curl -X PATCH -H "X-API-Key: <key>" -H "Content-Type: application/json" \
 
 ---
 
+## Telefones e contatos da empresa
+
+Cada empresa pode ter **vários telefones**, e cada telefone guarda o **nome do contato** associado (o contato fica ligado ao número). O campo antigo `phone`/`contact` da empresa continua existindo; os novos telefones vêm em `phones: [{ id, number, contactName }]` no `GET /companies` e no `GET /companies/:id`.
+
+Regras: `number` aceita máscara e precisa ter de 8 a 15 dígitos (com DDD); não pode haver o mesmo número duas vezes na mesma empresa (`409`); `contactName` é opcional.
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/data/companies/:id/phones` | Lista os telefones da empresa |
+| `POST` | `/api/data/companies/:id/phones` | Adiciona um telefone `{ "number", "contactName" }` ou vários `{ "phones": [...] }` |
+| `PATCH` | `/api/data/companies/:id/phones/:phoneId` | Altera `number` e/ou `contactName` (só o que for enviado) |
+| `PUT` | `/api/data/companies/:id/phones` | Substitui a lista inteira: `{ "phones": [{ "id"?, "number", "contactName" }] }`. Com `id` atualiza; sem `id` cria; o que não vier na lista é removido |
+| `DELETE` | `/api/data/companies/:id/phones/:phoneId` | Remove o telefone (e o contato ligado a ele) |
+
+As mesmas rotas existem com login normal (JWT) em `/company/:id/phones...`, usadas pelo frontend.
+
+Filtros novos no `GET /companies`: `phoneNumber` (dígitos, busca parcial) e `phoneContact` (nome do contato, busca parcial).
+
+```bash
+# Adicionar dois telefones com contato
+curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://172.19.1.15:8800/api/data/companies/3/phones \
+  -d '{"phones":[{"number":"(61) 99999-0001","contactName":"Maria"},{"number":"61 3333-0002","contactName":"Financeiro"}]}'
+
+# Trocar só o nome do contato
+curl -X PATCH -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://172.19.1.15:8800/api/data/companies/3/phones/7 \
+  -d '{"contactName":"Maria Souza"}'
+
+# Trocar só o número (o contato continua ligado)
+curl -X PATCH -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://172.19.1.15:8800/api/data/companies/3/phones/7 \
+  -d '{"number":"61 98888-7777"}'
+
+# Empresas que têm um contato chamado "maria"
+curl -H "X-API-Key: <key>" "http://172.19.1.15:8800/api/data/companies?phoneContact=maria"
+```
+
+---
+
 ## `GET /api/data/companies/:id`
 
 Retorna empresa completa com impostos, obrigações, automações, grupo e modo de contato.

@@ -9,6 +9,7 @@ const DpHistory = require("./DpHistory");
 const FiscalHistory = require("./FiscalHistory");
 const ContactMode = require("./ContactMode");
 const Grupo = require("./Grupo");
+const CompanyPhone = require("./CompanyPhone");
 const Automation = require("./Automation");
 const BonusResult = require("./BonusResult");
 const AccessoryObligation = require("./AccessoryObligation");
@@ -266,3 +267,7 @@ ProcessInstance.belongsTo(User, { foreignKey: "responsibleUserId", as: "responsi
 ProcessInstance.belongsTo(User, { foreignKey: "createdById", as: "createdBy", constraints: false });
 ProcessEvent.belongsTo(User, { foreignKey: "userId", as: "user", constraints: false });
 ProcessInstanceStep.belongsTo(User, { foreignKey: "completedById", as: "completedBy", constraints: false });
+
+// Telefones (com nome do contato) de cada empresa
+Company.hasMany(CompanyPhone, { foreignKey: "companyId", as: "phones", onDelete: "CASCADE" });
+CompanyPhone.belongsTo(Company, { foreignKey: "companyId", as: "company" });

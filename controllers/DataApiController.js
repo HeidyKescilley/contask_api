@@ -10,6 +10,7 @@ const AccessoryObligation = require("../models/AccessoryObligation");
 const Grupo = require("../models/Grupo");
 const ContactMode = require("../models/ContactMode");
 const Certificate = require("../models/Certificate");
+const CompanyPhone = require("../models/CompanyPhone");
 const cacheManager = require("../utils/CacheManager");
 const logger = require("../logger/logger");
 
@@ -261,10 +262,27 @@ function buildCompanyQuery(q) {
     const { include: certificateInclude, topLevel: certTopLevel } = buildCertificateInclude(q);
     if (certTopLevel) where[Op.and] = [...(where[Op.and] || []), certTopLevel];
 
+  // --- Telefones: ?phoneNumber=6199 (dígitos, parcial) e ?phoneContact=maria ---
+  const phoneInclude = {
+    model: CompanyPhone,
+    as: "phones",
+    attributes: ["id", "number", "contactName"],
+    required: false,
+  };
+  const phoneWhere = {};
+  const phoneDigits = q.phoneNumber ? String(q.phoneNumber).replace(/\D/g, "") : "";
+  if (phoneDigits) phoneWhere.numberDigits = { [Op.like]: `%${phoneDigits}%` };
+  if (q.phoneContact) phoneWhere.contactName = { [Op.like]: `%${q.phoneContact}%` };
+  if (Object.keys(phoneWhere).length) {
+    phoneInclude.where = phoneWhere;
+    phoneInclude.required = true;
+  }
+
   return {
     where,
     include: [
       fiscalInclude,
+      phoneInclude,
       dpInclude,
       contabilInclude,
       { model: Grupo, as: "grupo", attributes: ["id", "name"] },
@@ -435,6 +453,7 @@ module.exports = class DataApiController {
         },
         { model: Automation, as: "automations", attributes: ["id", "name"], through: { attributes: [] } },
         { model: Certificate, as: "certificate", attributes: ["id", "validFrom", "validUntil", "certificateRazaoSocial"] },
+        { model: CompanyPhone, as: "phones", attributes: ["id", "number", "contactName"] },
       ],
     });
 
