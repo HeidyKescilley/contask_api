@@ -42,6 +42,48 @@ async function refreshCaches() {
   }
 }
 
+/** Valida a lista completa (formato do PUT). Retorna { items } ou { error }. */
+async function prepareReplace(companyId, phones) {
+  const current = await CompanyPhone.findAll({ where: { companyId }, attributes: ["id"] });
+  const currentIds = new Set(current.map((p) => p.id));
+
+  const items = [];
+  for (const item of phones) {
+    const { value, error } = parsePhone(item);
+    if (error) return { error };
+    if (item.id !== undefined && item.id !== null && !currentIds.has(Number(item.id))) {
+      return { error: `Telefone id ${item.id} não pertence a esta empresa.` };
+    }
+    items.push({ id: item.id !== undefined && item.id !== null ? Number(item.id) : null, ...value });
+  }
+  const digits = items.map((i) => i.numberDigits);
+  if (new Set(digits).size !== digits.length) return { error: "Há números repetidos na lista." };
+  return { items };
+}
+
+/** Grava a lista validada: atualiza os com id, cria os sem id e remove os ausentes. */
+async function applyReplace(companyId, items, transaction) {
+  const keep = items.filter((i) => i.id).map((i) => i.id);
+  await CompanyPhone.destroy({
+    where: { companyId, ...(keep.length ? { id: { [Op.notIn]: keep } } : {}) },
+    transaction,
+  });
+  // Passo intermediário evita colisão do índice único quando números são trocados entre itens.
+  for (const i of items.filter((x) => x.id)) {
+    await CompanyPhone.update({ numberDigits: `tmp-${i.id}` }, { where: { id: i.id }, transaction });
+  }
+  for (const i of items.filter((x) => x.id)) {
+    await CompanyPhone.update(
+      { number: i.number, numberDigits: i.numberDigits, contactName: i.contactName ?? null },
+      { where: { id: i.id }, transaction }
+    );
+  }
+  const fresh = items
+    .filter((x) => !x.id)
+    .map(({ id, ...v }) => ({ ...v, companyId, contactName: v.contactName ?? null }));
+  if (fresh.length) await CompanyPhone.bulkCreate(fresh, { transaction });
+}
+
 const listFor = (companyId) =>
   CompanyPhone.findAll({ where: { companyId }, attributes: ATTRIBUTES, order: [["id", "ASC"]] });
 
@@ -138,44 +180,13 @@ module.exports = class CompanyPhoneController {
         return res.status(400).json({ message: "Informe 'phones' como lista." });
       }
 
-      const current = await CompanyPhone.findAll({ where: { companyId: company.id } });
-      const currentIds = new Set(current.map((p) => p.id));
+      const prepared = await prepareReplace(company.id, req.body.phones);
+      if (prepared.error) return res.status(400).json({ message: prepared.error });
+      const items = prepared.items;
 
-      const items = [];
-      for (const item of req.body.phones) {
-        const { value, error } = parsePhone(item);
-        if (error) return res.status(400).json({ message: error });
-        if (item.id !== undefined && !currentIds.has(Number(item.id))) {
-          return res.status(400).json({ message: `Telefone id ${item.id} não pertence a esta empresa.` });
-        }
-        items.push({ id: item.id !== undefined ? Number(item.id) : null, ...value });
-      }
-      const digits = items.map((i) => i.numberDigits);
-      if (new Set(digits).size !== digits.length) {
-        return res.status(400).json({ message: "Há números repetidos na lista." });
-      }
-
-      await CompanyPhone.sequelize.transaction(async (transaction) => {
-        const keep = items.filter((i) => i.id).map((i) => i.id);
-        await CompanyPhone.destroy({
-          where: { companyId: company.id, ...(keep.length ? { id: { [Op.notIn]: keep } } : {}) },
-          transaction,
-        });
-        // Passo intermediário evita colisão do índice único quando números são trocados entre itens.
-        for (const i of items.filter((x) => x.id)) {
-          await CompanyPhone.update({ numberDigits: `tmp-${i.id}` }, { where: { id: i.id }, transaction });
-        }
-        for (const i of items.filter((x) => x.id)) {
-          await CompanyPhone.update(
-            { number: i.number, numberDigits: i.numberDigits, contactName: i.contactName ?? null },
-            { where: { id: i.id }, transaction }
-          );
-        }
-        const fresh = items
-          .filter((x) => !x.id)
-          .map(({ id, ...v }) => ({ ...v, companyId: company.id, contactName: v.contactName ?? null }));
-        if (fresh.length) await CompanyPhone.bulkCreate(fresh, { transaction });
-      });
+      await CompanyPhone.sequelize.transaction((transaction) =>
+        applyReplace(company.id, items, transaction)
+      );
 
       await refreshCaches();
       logger.info(`Telefones da empresa ${company.name} (ID: ${company.id}) substituídos (${items.length}).`);
@@ -200,4 +211,10 @@ module.exports = class CompanyPhoneController {
       return res.status(500).json({ message: error.message });
     }
   }
+
+  /** Usado por /company/add e /company/edit: valida a lista antes de gravar a empresa. */
+  static prepareReplace = prepareReplace;
+  /** Grava a lista (dentro da transação informada). */
+  static applyReplace = applyReplace;
+  static refreshCaches = refreshCaches;
 };

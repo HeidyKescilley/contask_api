@@ -33,6 +33,7 @@ const CompanyTax = require("../models/CompanyTax");
 const AccessoryObligation = require("../models/AccessoryObligation");
 const CompanyPeriodNote = require("../models/CompanyPeriodNote");
 const Certificate = require("../models/Certificate");
+const CompanyPhoneController = require("./CompanyPhoneController");
 
 // Retorna o período do mês anterior no formato YYYY-MM
 // Na contabilidade, sempre trabalhamos com a competência anterior (mês passado)
@@ -233,6 +234,14 @@ module.exports = class CompanyController {
           .json({ message: "Campos obrigatórios faltando." });
       }
 
+      let phonesPrepared = null;
+      if (Array.isArray(req.body.phones)) {
+        phonesPrepared = await CompanyPhoneController.prepareReplace(null, req.body.phones);
+        if (phonesPrepared.error) {
+          return res.status(400).json({ message: phonesPrepared.error });
+        }
+      }
+
       const existingCompany = await Company.findOne({ where: { cnpj } });
       if (existingCompany) {
         logger.warn(
@@ -280,6 +289,12 @@ module.exports = class CompanyController {
         status: "ATIVA",
         companyId: newCompany.id,
       });
+
+      if (phonesPrepared?.items.length) {
+        await Company.sequelize.transaction((t) =>
+          CompanyPhoneController.applyReplace(newCompany.id, phonesPrepared.items.map(({ id, ...v }) => v), t)
+        );
+      }
 
       logger.info(
         `Empresa criada com sucesso: ${name} (ID: ${newCompany.id}) por ${req.user.email}`
@@ -338,7 +353,21 @@ module.exports = class CompanyController {
         `Empresa (${company.name}, ID: ${id}) está sendo editada por ${req.user.email}`
       );
 
+      let phonesPrepared = null;
+      if (Array.isArray(companyData.phones)) {
+        phonesPrepared = await CompanyPhoneController.prepareReplace(company.id, companyData.phones);
+        if (phonesPrepared.error) {
+          return res.status(400).json({ message: phonesPrepared.error });
+        }
+      }
+
       await company.update(companyData);
+
+      if (phonesPrepared) {
+        await Company.sequelize.transaction((t) =>
+          CompanyPhoneController.applyReplace(company.id, phonesPrepared.items, t)
+        );
+      }
 
       if (companyData.automationIds) {
         await company.setAutomations(companyData.automationIds);
